@@ -1,0 +1,70 @@
+4. Registers addresses within the parallel printer port:
+
+Port            R/W IOAddr      Bits    Function
+
+----------          ------      -----   ----------------
+
+Data Out        W   Base+0      D0-D7   8 LS TTL outputs
+
+Status In       R   Base+1      S3-S7   5 LS TTL inputs
+
+Control Out     W   Base+2      C0-C3   4 TTL Open Collector outputs
+
+    "           "     "         C4      internal, IRQ enable
+
+    "           "     "         C5      internal, Tristate data [PS/2]
+
+
+
+Data Feedback   R   Base+0      D0-D7   matches Data Out
+
+Control Feedbk  R   Base+2      C0-C3   matches Control Out
+
+    "           "     "         C4      internal, IRQ enable readback
+
+The Feedback registers are for diagnostic purposes (except in bidirectional ports, where Data Feedback is used for data input; and the IRQ enable C4).
+5. Pin signals and register bits
+
+<= in   DB25    Cent    Name of         Reg
+
+=> out  pin     pin     Signal          Bit     Function Notes
+
+------  ----    ----    --------        ---     -----------------------------
+
+=>       1       1      -Strobe         C0-     Set Low pulse >0.5 us to send
+
+=>       2       2      Data 0          D0      Set to least significant data
+
+=>       3       3      Data 1          D1      ...
+
+=>       4       4      Data 2          D2      ...
+
+=>       5       5      Data 3          D3      ...
+
+=>       6       6      Data 4          D4      ...
+
+=>       7       7      Data 5          D5      ...
+
+=>       8       8      Data 6          D6      ...
+
+=>       9       9      Data 7          D7      Set to most significant data
+
+<=      10      10      -Ack            S6+ IRQ Low Pulse ~ 5 uS, after accept
+
+<=      11      11      +Busy           S7-     High for Busy/Offline/Error
+
+<=      12      12      +PaperEnd       S5+     High for out of paper
+
+<=      13      13      +SelectIn       S4+     High for printer selected
+
+=>      14      14      -AutoFd         C1-     Set Low to autofeed one line
+
+<=      15      32      -Error          S3+     Low for Error/Offline/PaperEnd
+
+=>      16      31      -Init           C2+     Set Low pulse > 50uS to init
+
+=>      17      36      -Select         C3-     Set Low to select printer
+
+==      18-25   19-30,  Ground
+
+               33,17,16
