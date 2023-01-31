@@ -25,6 +25,38 @@
 #define sdebug(a)
 #endif
 
+int readlpt() {
+  uint32_t dw = gpio_get_all() >> 20;
+  uint8_t b = (dw >> 8) | ((dw&0x80) >> 6) | ((dw&0x40) >> 4) | ((dw&0x04) << 1) | ((dw&0x02) << 3);
+  return b;
+}
+
+int readbyte() {
+  int c, d;
+  while (((c = readlpt()) & 0x10) == 0x00)
+    tight_loop_contents();
+  d = (c & 0xf) << 4;
+  while (((c = readlpt()) & 0x10) == 0x10)
+    tight_loop_contents();
+  d |= (c & 0xf);
+  return d;
+}
+
+void writebyte(uint8_t b) {
+  gpio_put(16, (b & 0x10) ? 0 : 1);
+  gpio_put(17, (b & 0x20) ? 0 : 1);
+  gpio_put(18, (b & 0x40) ? 0 : 1);
+  gpio_put(20, (b & 0x80) ? 0 : 1);
+  gpio_put(19, 1);
+  sleep_ms(10);
+  gpio_put(16, (b & 0x01) ? 0 : 1);
+  gpio_put(17, (b & 0x02) ? 0 : 1);
+  gpio_put(18, (b & 0x04) ? 0 : 1);
+  gpio_put(20, (b & 0x08) ? 0 : 1);
+  gpio_put(19, 0);
+  sleep_ms(10);
+}
+
 int main()
 {
   stdio_init_all();
@@ -89,6 +121,17 @@ int main()
       printf("gpios: %08x (%02x)\n", (gpio_get_all() >> 20), b);
       
     }
+    
+    if (c == 'w') {
+      printf("Reading: %02X\n", readbyte());
+    }
+    if (c == 'e') {
+      printf("Emit: %02X\n", b);
+      writebyte(b);
+      b <<= 1;
+      if (!b) b = 1;
+    }
+    
     if (c == 'd') {
       printf("w:%d\n", w);
       gpio_put(16, w & 1);
@@ -118,20 +161,20 @@ int main()
       if (b == 0x20) b = 1;
     }
     if (c == 'b') {
+      // working very well - TODO optimise
       printf("b:%02X\n", b);
-      
-      gpio_put(17, (b & 0x80) ? 0 : 1);
+      gpio_put(16, (b & 0x10) ? 0 : 1);
+      gpio_put(17, (b & 0x20) ? 0 : 1);
       gpio_put(18, (b & 0x40) ? 0 : 1);
-      gpio_put(19, (b & 0x20) ? 1 : 0);
-      gpio_put(20, (b & 0x10) ? 0 : 1);
-      gpio_put(16, 1);
-      sleep_ms(1);
-      gpio_put(17, (b & 0x08) ? 0 : 1);
+      gpio_put(20, (b & 0x80) ? 0 : 1);
+      gpio_put(19, 1);
+      sleep_ms(10);
+      gpio_put(16, (b & 0x01) ? 0 : 1);
+      gpio_put(17, (b & 0x02) ? 0 : 1);
       gpio_put(18, (b & 0x04) ? 0 : 1);
-      gpio_put(19, (b & 0x02) ? 1 : 0);
-      gpio_put(20, (b & 0x01) ? 0 : 1);
-      gpio_put(16, 0);
-      sleep_ms(1);
+      gpio_put(20, (b & 0x08) ? 0 : 1);
+      gpio_put(19, 0);
+      sleep_ms(10);
       
       b <<= 1;
       if (!b) b = 1;
