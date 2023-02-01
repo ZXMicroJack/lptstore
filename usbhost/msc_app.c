@@ -39,9 +39,11 @@ F8 T5 rev 1.10
 Disk Size: 31 MB
 Block Count = 63488, Block Size: 512
 */
-bool inquiry_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const* csw)
+
+// bool inquiry_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const* csw)
+bool inquiry_complete_cb(uint8_t dev_addr, tuh_msc_complete_data_t const* cb_data)
 {
-  if (csw->status != 0)
+  if (cb_data->csw->status != 0)
   {
     printf("Inquiry failed\r\n");
     return false;
@@ -51,8 +53,8 @@ bool inquiry_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const
   printf("%.8s %.16s rev %.4s\r\n", inquiry_resp.vendor_id, inquiry_resp.product_id, inquiry_resp.product_rev);
 
   // Get capacity of device
-  uint32_t const block_count = tuh_msc_get_block_count(dev_addr, cbw->lun);
-  uint32_t const block_size = tuh_msc_get_block_size(dev_addr, cbw->lun);
+  uint32_t const block_count = tuh_msc_get_block_count(dev_addr, cb_data->cbw->lun);
+  uint32_t const block_size = tuh_msc_get_block_size(dev_addr, cb_data->cbw->lun);
 
   printf("Disk Size: %lu MB\r\n", block_count / ((1024*1024)/block_size));
   printf("Block Count = %lu, Block Size: %lu\r\n", block_count, block_size);
@@ -60,17 +62,24 @@ bool inquiry_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const
   return true;
 }
 
-bool msc_fat_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const* csw, uintptr_t intptr)
+// typedef struct {
+//   msc_cbw_t const* cbw; // SCSI command
+//   msc_csw_t const* csw; // SCSI status
+//   void* scsi_data;      // SCSI Data
+//   uintptr_t user_arg;   // user argument
+// }tuh_msc_complete_data_t;
+// 
+// typedef bool (*tuh_msc_complete_cb_t)(uint8_t dev_addr, tuh_msc_complete_data_t const* cb_data);
+
+// bool msc_fat_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const* csw, uintptr_t intptr)
+bool msc_fat_complete_cb(uint8_t dev_addr, tuh_msc_complete_data_t const *d)
 {
     (void)dev_addr;
-    (void)cbw;
-    (void)intptr;
-    
     // success = csw->status == MSC_CSW_STATUS_PASSED;
-    printf("msc_fat_complete_cb: status = %d\n", csw->status == MSC_CSW_STATUS_PASSED);
-    printf("msc_fat_complete_cb: csw->status = %d\n", csw->status);
+    printf("msc_fat_complete_cb: status = %d\n", d->csw->status == MSC_CSW_STATUS_PASSED);
+    printf("msc_fat_complete_cb: csw->status = %d\n", d->csw->status);
     
-    return csw->status == MSC_CSW_STATUS_PASSED;
+    return d-> csw->status == MSC_CSW_STATUS_PASSED;
 }
 
 int write_sector(int pdrv, uint8_t *buff, uint32_t sector) {
