@@ -59,7 +59,7 @@ void tuh_msc_mount_cb(uint8_t dev_addr)
   printf("A MassStorage device is mounted\r\n");
 
   uint8_t const lun = 0;
-  tuh_msc_inquiry(dev_addr, lun, &inquiry_resp, inquiry_complete_cb);
+  tuh_msc_inquiry(dev_addr, lun, &inquiry_resp, inquiry_complete_cb, (uintptr_t)NULL);
 //
 //  //------------- file system (only 1 LUN support) -------------//
 //  uint8_t phy_disk = dev_addr-1;

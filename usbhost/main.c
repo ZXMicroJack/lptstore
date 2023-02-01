@@ -30,6 +30,22 @@
 #include "bsp/board.h"
 #include "tusb.h"
 
+#define CFG_TUH_CDC 0
+
+// #include <stdio.h>
+// #include <stdint.h>
+// #include <pico/time.h>
+// 
+#include "hardware/clocks.h"
+#include "hardware/structs/clocks.h"
+// #include "hardware/flash.h"
+
+#include "pico/bootrom.h"
+#include "pico/stdlib.h"
+#include "pico/binary_info.h"
+#include "pico/bootrom.h"
+
+
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
@@ -41,6 +57,12 @@ extern void hid_app_task(void);
 /*------------- MAIN -------------*/
 int main(void)
 {
+  stdio_init_all();
+  uart_init (uart0, 115200);
+  gpio_set_function(0, GPIO_FUNC_UART);
+  gpio_set_function(1, GPIO_FUNC_UART);
+
+
   board_init();
 
   printf("TinyUSB Host CDC MSC HID Example\r\n");
@@ -65,6 +87,42 @@ int main(void)
   return 0;
 }
 
+#if 0
+static scsi_inquiry_resp_t inquiry_resp;
+
+bool inquiry_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const* csw) {
+  if (csw->status != 0) {
+      printf("Inquiry failed\r\n");
+      return false;
+  }
+
+  // Print out Vendor ID, Product ID and Rev
+  printf("%.8s %.16s rev %.4s\r\n", inquiry_resp.vendor_id, inquiry_resp.product_id, inquiry_resp.product_rev);
+
+  // Get capacity of device
+  uint32_t const block_count = tuh_msc_get_block_count(dev_addr, cbw->lun);
+  uint32_t const block_size = tuh_msc_get_block_size(dev_addr, cbw->lun);
+
+  printf("Disk Size: %lu MB\r\n", block_count / ((1024*1024)/block_size));
+  printf("Block Count = %lu, Block Size: %lu\r\n", block_count, block_size);
+
+  return true;
+}
+
+void tuh_msc_mount_cb(uint8_t dev_addr) {
+  printf("A MassStorage device is mounted\n");
+  uint8_t pdrv = dev_addr-1;
+  uint8_t const lun = 0;
+  tuh_msc_inquiry(dev_addr, lun, &inquiry_resp, inquiry_complete_cb);
+  printf("drive %u mounted\r\n",pdrv);
+}
+
+void tuh_msc_umount_cb(uint8_t dev_addr) {
+  uint8_t pdrv = dev_addr-1;
+  printf("A MassStorage device is unmounted\r\n");
+  printf("FATFS drive %u unmounted\r\n",pdrv);
+}
+#endif
 //--------------------------------------------------------------------+
 // USB CDC
 //--------------------------------------------------------------------+
@@ -125,4 +183,5 @@ void led_blinking_task(void)
 
   board_led_write(led_state);
   led_state = 1 - led_state; // toggle
+  printf("Blink!\n");
 }
