@@ -54,6 +54,13 @@ void led_blinking_task(void);
 extern void cdc_task(void);
 extern void hid_app_task(void);
 
+
+uint8_t sector[512];
+uint8_t sector2[512];
+
+extern int read_sector(int pdrv, uint8_t *buff, uint32_t sector);
+extern int write_sector(int pdrv, uint8_t *buff, uint32_t sector);
+
 /*------------- MAIN -------------*/
 int main(void)
 {
@@ -74,7 +81,58 @@ int main(void)
     // tinyusb host task
     tuh_task();
     led_blinking_task();
+    
+    switch(getchar_timeout_us(0)) {
+      case 'r': {
+        printf("read: returns %d\r\n", read_sector(0, sector, 0));
+        break;
+      }
+      case 'R': {
+        printf("read2: returns %d\r\n", read_sector(0, sector2, 0));
+        break;
+      }
+      case 'w': {
+        printf("write: returns %d\r\n", write_sector(0, sector, 0));
+        break;
+      }
+      case 'W': {
+        printf("write2: returns %d\r\n", write_sector(0, sector2, 0));
+        break;
+      }
+      case 'd': {
+        int i;
+        for (i=0; i<512; i++) {
+          if ((i&15) == 0) printf("\r\n");
+          printf("%02X ", sector[i]);
+        }
+        break;
+      }
+      case 'D': {
+        int i;
+        for (i=0; i<512; i++) {
+          if ((i&15) == 0) printf("\r\n");
+          printf("%02X ", sector2[i]);
+        }
+        break;
+      }
+      case 'b': {
+        memset(sector, 0, sizeof sector);
+        printf("cleared\n");
+        break;
+      }
+      case 'B': {
+        memset(sector2, 0, sizeof sector2);
+        printf("cleared2\n");
+        break;
+      }
+      
+//       default: {
+//         printf("What?\r\n");
+//       }
+    }
 
+    
+    
 #if CFG_TUH_CDC
     cdc_task();
 #endif

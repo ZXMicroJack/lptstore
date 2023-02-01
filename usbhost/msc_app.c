@@ -32,6 +32,13 @@
 //--------------------------------------------------------------------+
 static scsi_inquiry_resp_t inquiry_resp;
 
+/*
+TinyUSB Host CDC MSC HID Example
+A MassStorage device is mounted
+F8 T5 rev 1.10
+Disk Size: 31 MB
+Block Count = 63488, Block Size: 512
+*/
 bool inquiry_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const* csw)
 {
   if (csw->status != 0)
@@ -51,6 +58,33 @@ bool inquiry_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const
   printf("Block Count = %lu, Block Size: %lu\r\n", block_count, block_size);
 
   return true;
+}
+
+bool msc_fat_complete_cb(uint8_t dev_addr, msc_cbw_t const* cbw, msc_csw_t const* csw, uintptr_t intptr)
+{
+    (void)dev_addr;
+    (void)cbw;
+    (void)intptr;
+    
+    // success = csw->status == MSC_CSW_STATUS_PASSED;
+    printf("msc_fat_complete_cb: status = %d\n", csw->status == MSC_CSW_STATUS_PASSED);
+    printf("msc_fat_complete_cb: csw->status = %d\n", csw->status);
+    
+    return csw->status == MSC_CSW_STATUS_PASSED;
+}
+
+int write_sector(int pdrv, uint8_t *buff, uint32_t sector) {
+  if (!tuh_msc_write10(pdrv+1, 0, buff, sector, /*count*/1, msc_fat_complete_cb, (uintptr_t)NULL)) {
+    return 1;
+  }
+  return 0;
+}
+
+int read_sector(int pdrv, uint8_t *buff, uint32_t sector) {
+  if (!tuh_msc_read10(pdrv+1, 0, buff, sector, /*count*/1, msc_fat_complete_cb, (uintptr_t)NULL)) {
+    return 1;
+  }
+  return 0;
 }
 
 //------------- IMPLEMENTATION -------------//
