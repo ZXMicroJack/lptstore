@@ -113,7 +113,7 @@ PUBLIC void MediaCheck (rh_media_check_t far *rh)
 PUBLIC void BuildBPB (rh_get_bpb_t far *rh)
 {
   if (Debug)
-      cdprintf("SD: build BPB: unit=%d\n", rh->rh.unit);
+    cdprintf("SD: build BPB: unit=%d\n", rh->rh.unit);
   rh->bpb = &bpb;
   rh->rh.status = DONE;
 }
@@ -127,7 +127,9 @@ PUBLIC void BuildBPB (rh_get_bpb_t far *rh)
 /* never seems to be used...                 */
 PUBLIC void GetParameters (device_params_t far *dp)
 {
-  dp->form_factor = FORM_FACTOR;  dp->attributes = 0;  dp->media_type = 0;
+  dp->form_factor = FORM_FACTOR;
+  dp->attributes = 0;
+  dp->media_type = 0;
   dp->cylinders = bpb.total_sectors / (bpb.track_size * bpb.head_count);
   fmemcpy(&(dp->bpb), &bpb, sizeof(bpb_t));
 }
@@ -188,19 +190,25 @@ PUBLIC void ReadBlock (rh_io_t far *rh)
       rh->rh.unit, rh->start, rh->count, FP_SEG(rh->dta), FP_OFF(rh->dta));
   if (!drive_init ((rh_t far *) rh))  return;
   count = rh->count,  lbn = rh->start,  dta = rh->dta;
+
   while (count > 0) {
-      sendct = (count > 16) ? 16 : count;
-      status = SDRead(rh->rh.unit, lbn, dta, sendct);
-      if (status != RES_OK)  {
-   if (Debug) cdprintf("SD: read error - status=%d\n", status);
-   fmemset(dta, 0, BLOCKSIZE);
-   rh->rh.status = DONE | ERROR | dos_error(status);
-   return;
-      }
+    sendct = (count > 16) ? 16 : count;
+    cdprintf("SD1: in loop count %d sendct %d\n", count, sendct);
+    status = SDRead(rh->rh.unit, lbn, dta, sendct);
+//     status = RES_OK;
+    cdprintf("SD2: in loop count %d sendct %d\n", count, sendct);
+    if (sendct < 1 || status != RES_OK)  {
+      if (Debug) cdprintf("SD: read error - status=%d\n", status);
+      fmemset(dta, 0, BLOCKSIZE);
+      rh->rh.status = DONE | ERROR | dos_error(status);
+      return;
+    }
     lbn += sendct;
     count -= sendct;
     dta += (sendct*BLOCKSIZE);
+    cdprintf("SD: in loop count %d sendct %d\n", count, sendct);
   }
+  cdprintf("SD: done\n");
   rh->rh.status = DONE;
 }
 
@@ -303,7 +311,7 @@ PUBLIC void far SDDriver (rh_t far *rh)
 {
 /*
   if (Debug)
-    cdprintf("SD: request at %4x:%4x, command=%d, length=%d\n",
+    cdprintf("LPTSTORE: request at %4x:%4x, command=%d, length=%d\n",
       FP_SEG(rh), FP_OFF(rh), rh->command, rh->length);
 */
   switch (rh->command) {
@@ -320,7 +328,7 @@ PUBLIC void far SDDriver (rh_t far *rh)
     case SET_LOGICAL:     rh->status = DONE;          break;
 
     default:
-      cdprintf("SD: unimplemented driver request - command=%d, length=%d\n",
+      cdprintf("LPTSTORE: unimplemented driver request - command=%d, length=%d\n",
          rh->command, rh->length);
       rh->status = DONE | ERROR | UNKNOWN_COMMAND;
   }
@@ -361,6 +369,7 @@ PUBLIC void Shutdown (void)
 PUBLIC void Initialize (rh_init_t far *rh)
 {
   WORD brkadr, reboot[2];  int status, i;
+  Debug=1;
 
   /* The version number is sneakily stored in the device header! */
   cdprintf("SD pport device driver V%c.%c (C) 1994 by Dan Marks\n     based on TU58 by Robert Armstrong\n",
@@ -399,9 +408,8 @@ PUBLIC void Initialize (rh_init_t far *rh)
     reboot[1], reboot[0], RebootVector[1], RebootVector[0]);
 
   /* All is well.  Tell DOS how many units and the BPBs... */
-  cdprintf("SD initialized on DOS drive %c\n",
-    rh->drive+'A');
-  rh->nunits = 1;  rh->bpbtbl = &bpbtbl;
+  cdprintf("Initialized 16 DOS drives from C-R\n");
+  rh->nunits = 16;  rh->bpbtbl = &bpbtbl;
   rh->rh.status = DONE;
 
   if (Debug)

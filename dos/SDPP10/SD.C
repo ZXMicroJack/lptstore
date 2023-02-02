@@ -97,8 +97,12 @@ BYTE check_fs (BYTE unit,
    DWORD sect  /* Sector# (lba) to check if it is an FAT boot record or not */
 )
 {
-   if (disk_read (unit, local_buffer, sect, 1) != RES_OK)
-      return 3;
+  
+  if (SDRead(unit, sect, local_buffer, 1) != RES_OK)
+    return 3;
+    
+//    if (disk_read (unit, local_buffer, sect, 1) != RES_OK)
+//       return 3;
    if (LD_WORD(&local_buffer[BS_55AA]) != 0xAA55) /* Check boot record signature (always placed at offset 510 even if the sector size is >512) */
       return 2;
    if ((LD_DWORD(&local_buffer[BS_FilSysType]) & 0xFFFFFF) == 0x544146)      /* Check "FAT" string */
@@ -199,7 +203,8 @@ PUBLIC BOOLEAN SDInitialize (BYTE unit, BYTE partno, bpb_t *bpb)
 /* SDMediaCheck */
 PUBLIC BOOLEAN SDMediaCheck (BYTE unit)
 {
-  return (disk_result(unit) == RES_OK) ? FALSE : TRUE;
+  return TRUE;
+//   return (disk_result(unit) == RES_OK) ? FALSE : TRUE;
 }
 
 /* SDRead */
@@ -212,9 +217,22 @@ PUBLIC BOOLEAN SDMediaCheck (BYTE unit)
 /*                         */
 /* RETURNS: operation status as reported by the TU58     */
 /*                         */
+#include "block0.h"
+#include "block4.h"
+
 PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
-  return disk_read (unit, buffer, lbn + partition_offset, count);
+  int i;
+  for (i=0; i<count; i++) {
+    if (lbn == 0) fmemcpy(buffer, xaa, 512);
+    else if (lbn == 4) fmemcpy(buffer, xae, 512);
+    else if (lbn == 68) fmemcpy(buffer, xae, 512);
+    else fmemset(buffer, 0, 512);
+    lbn ++;
+    buffer += 512;
+  }
+  return RES_OK;
+//   return disk_read (unit, buffer, lbn + partition_offset, count);
 }
 
 
@@ -231,6 +249,7 @@ PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 /*                         */
 PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
-  return disk_write (unit, buffer, lbn + partition_offset, count);
+  return RES_OK;
+//   return disk_write (unit, buffer, lbn + partition_offset, count);
 }
 

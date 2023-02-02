@@ -128,7 +128,7 @@ _header  DD -1    ; link to the next device
    DW 00C0H    ; block device, non-IBM format, generic IOCTL
    DW DGROUP:STRATEGY   ; address of the strategy routine
    DW DGROUP:INTERRUPT;  "     "   "  interrupt   "
-   DB 1     ; number of drives
+   DB 16     ; number of drives
    DB 'SDCDv10'   ; DOS doesn't really use these bytes
 
 ;   The geometry (sectors/track, tracks/cylinder) defined in the BPB is rather
@@ -146,17 +146,31 @@ _bpb  DW 512      ; sector size
    DW 1     ; number of reserved sectors
    DB 2     ; number of FAT copies
    DW 48    ; number of files in root directory
-   DW 512      ; total number of sectors
+   DW 65535      ; total number of sectors
    DB 0F0H     ; media descriptor
    DW 2     ; number of sectors per FAT
    DW 64    ; sectors per track
-   DW 2     ; number of heads
+   DW 32     ; number of heads
    DD 0     ; number of hidden sectors
    DD 0     ; large sector count
 
 ; This table contains one BPB pointer for each physical drive...
 _bpbtbl  DW DGROUP:_bpb ; the BPB for unit 0
-;   DW DGROUP:_bpb ;  "   "   "   "   1
+   DW DGROUP:_bpb ;  "   "   "   "   1
+   DW DGROUP:_bpb ;  "   "   "   "   2
+   DW DGROUP:_bpb ;  "   "   "   "   3
+   DW DGROUP:_bpb ;  "   "   "   "   4
+   DW DGROUP:_bpb ;  "   "   "   "   5
+   DW DGROUP:_bpb ;  "   "   "   "   6
+   DW DGROUP:_bpb ;  "   "   "   "   7
+   DW DGROUP:_bpb ;  "   "   "   "   8
+   DW DGROUP:_bpb ;  "   "   "   "   9
+   DW DGROUP:_bpb ;  "   "   "   "   10
+   DW DGROUP:_bpb ;  "   "   "   "   11
+   DW DGROUP:_bpb ;  "   "   "   "   12
+   DW DGROUP:_bpb ;  "   "   "   "   13
+   DW DGROUP:_bpb ;  "   "   "   "   14
+   DW DGROUP:_bpb ;  "   "   "   "   15
 
 ; This doubleword points to the entry point of the C driver code...
    EXTRN _c_driver:WORD
