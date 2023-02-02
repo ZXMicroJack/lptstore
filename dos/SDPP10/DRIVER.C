@@ -34,10 +34,11 @@ PRIVATE BOOLEAN parse_options (char far *);
 PUBLIC void Initialize (rh_init_t far *);
 PUBLIC void far SDDriver (rh_t far *);
 
+#define NR_DRIVES 16
 
 /* These data structures are exported by the HEADER.ASM module... */
 extern devhdr_t header;    /* MSDOS device header for our driver  */
-extern bpb_t bpb;          /* BIOS Parameter block "   "   "   */
+extern bpb_t bpb[NR_DRIVES];          /* BIOS Parameter block "   "   "   */
 extern bpbtbl_t bpbtbl;    /* BPB table (one for each drive unit) */
 
 /*   This double word is actually a far pointer to the entry point of   */
@@ -51,7 +52,7 @@ extern unsigned char com_flag;
 
 /* Local data for this module... */
 BOOLEAN Debug        = FALSE; /* TRUE to enable debug (verbose) mode */
-BOOLEAN InitNeeded   = TRUE;  /* TRUE if we need to (re) initialize  */
+BOOLEAN InitNeeded[NR_DRIVES];  /* TRUE if we need to (re) initialize  */
 WORD  RebootVector[2];  /* previous INT 19H vector contents */
 extern DWORD partitionoffset;
 
@@ -59,6 +60,15 @@ extern BYTE  sd_card_check;
 extern BYTE  portbase;
 
 BYTE partition_number;
+
+
+void force_init() {
+  int i;
+  for (i=0; i<NR_DRIVES; i++) {
+    InitNeeded[i] = TRUE;
+  }
+}
+
 
 /* fmemcpy */
 /*   This function is equivalent to the C RTL _fmemcpy routine. We have */
@@ -114,7 +124,7 @@ PUBLIC void BuildBPB (rh_get_bpb_t far *rh)
 {
   if (Debug)
     cdprintf("SD: build BPB: unit=%d\n", rh->rh.unit);
-  rh->bpb = &bpb;
+  rh->bpb = &bpb[rh->rh.unit];
   rh->rh.status = DONE;
 }
 
@@ -130,8 +140,8 @@ PUBLIC void GetParameters (device_params_t far *dp)
   dp->form_factor = FORM_FACTOR;
   dp->attributes = 0;
   dp->media_type = 0;
-  dp->cylinders = bpb.total_sectors / (bpb.track_size * bpb.head_count);
-  fmemcpy(&(dp->bpb), &bpb, sizeof(bpb_t));
+  dp->cylinders = bpb[0].total_sectors / (bpb[0].track_size * bpb[0].head_count);
+  fmemcpy(&(dp->bpb), &bpb[0], sizeof(bpb_t));
 }
 
 /* dos_error */
@@ -144,13 +154,14 @@ PUBLIC void GetParameters (device_params_t far *dp)
 /* the usual DOS "Abort, Retry or Ignore" dialog. Communications errors */
 /* are a special situation.  In these cases we also set global flag to  */
 /* force a controller initialization before the next operation.      */
+
 int dos_error (int status)
 {
   switch (status) {
     case RES_OK:     return 0;
     case RES_WRPRT:  return WRITE_PROTECT;
-    case RES_NOTRDY: InitNeeded= TRUE; return NOT_READY;
-    case RES_ERROR:  InitNeeded= TRUE; return BAD_SECTOR;
+    case RES_NOTRDY: force_init(); return NOT_READY;
+    case RES_ERROR:  force_init(); return BAD_SECTOR;
     case RES_PARERR: return CRC_ERROR;
 
     default:
@@ -168,13 +179,13 @@ int dos_error (int status)
 /* the request header and return FALSE.               */
 BOOLEAN drive_init (rh_t far *rh)
 {
-  if (!InitNeeded)  return TRUE;
-  if (!SDInitialize(rh->unit, partition_number, &bpb)) {
+  if (!InitNeeded[rh->unit])  return TRUE;
+  if (!SDInitialize(rh->unit, partition_number, &bpb[rh->unit])) {
     if (Debug)  cdprintf("SD: drive failed to initialize\n");
     rh->status = DONE | ERROR | GENERAL_FAILURE;
     return FALSE;
   }
-  InitNeeded = FALSE;
+  InitNeeded[rh->unit] = FALSE;
   if (Debug) cdprintf("SD: drive initialized\n");
   return TRUE;
 }
@@ -389,7 +400,12 @@ PUBLIC void Initialize (rh_init_t far *rh)
 {
   WORD brkadr, reboot[2];  int status, i;
 //   Debug=1;
-
+  
+  force_init();
+//   for (i=1; i<NR_DRIVES; i++) {
+//     fmemcpy(&bpb[i], &bpb[0], sizeof bpb[0]);
+//   }
+  
   /* The version number is sneakily stored in the device header! */
   cdprintf("SD pport device driver V%c.%c (C) 1994 by Dan Marks\n     based on TU58 by Robert Armstrong\n",
     header.name[6], header.name[7]);
@@ -412,7 +428,7 @@ PUBLIC void Initialize (rh_init_t far *rh)
 
 /* Try to make contact with the drive... */
   if (Debug) cdprintf("SD: initializing drive\n");
-  if (!SDInitialize(rh->rh.unit, partition_number, &bpb)) {
+  if (!SDInitialize(rh->rh.unit, partition_number, &bpb[rh->rh.unit])) {
     cdprintf("SD: drive not connected or not powered\n");
     goto unload1;
   }
@@ -428,9 +444,11 @@ PUBLIC void Initialize (rh_init_t far *rh)
 
   /* All is well.  Tell DOS how many units and the BPBs... */
   cdprintf("Initialized 16 DOS drives from C-R\n");
-  rh->nunits = 16;  rh->bpbtbl = &bpbtbl;
+  rh->nunits = NR_DRIVES;
+  rh->bpbtbl = &bpbtbl;
   rh->rh.status = DONE;
 
+#if 0
   if (Debug)
   {   
       cdprintf("SD: BPB data:\n");
@@ -448,7 +466,8 @@ PUBLIC void Initialize (rh_init_t far *rh)
       cdprintf("Sector Ct 32 hex: %L\n", bpb.sector_count);
       cdprintf("Partition offset: %L\n", partition_offset);
    }
-  return;
+#endif
+return;
 
   /*   We get here if there are any errors in initialization.  In that  */
   /* case we can unload this driver completely from memory by setting   */

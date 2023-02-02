@@ -140,8 +140,8 @@ _header  DD -1    ; link to the next device
 ; number of cylinders by cylinders = device_size / (sectors * heads).  This
 ; value must always come out to an integer.
 
-; The BIOS Parameter Block...
-_bpb  DW 512      ; sector size
+mkbpb MACRO bpbn
+bpbn DW 512      ; sector size
    DB 1     ; cluster size
    DW 1     ; number of reserved sectors
    DB 2     ; number of FAT copies
@@ -153,24 +153,42 @@ _bpb  DW 512      ; sector size
    DW 32     ; number of heads
    DD 0     ; number of hidden sectors
    DD 0     ; large sector count
+ENDM
 
+  mkbpb _bpb
+  mkbpb _bpb1
+  mkbpb _bpb2
+  mkbpb _bpb3
+  mkbpb _bpb4
+  mkbpb _bpb5
+  mkbpb _bpb6
+  mkbpb _bpb7
+  mkbpb _bpb8
+  mkbpb _bpb9
+  mkbpb _bpb10
+  mkbpb _bpb11
+  mkbpb _bpb12
+  mkbpb _bpb13
+  mkbpb _bpb14
+  mkbpb _bpb15
+  
 ; This table contains one BPB pointer for each physical drive...
 _bpbtbl  DW DGROUP:_bpb ; the BPB for unit 0
-   DW DGROUP:_bpb ;  "   "   "   "   1
-   DW DGROUP:_bpb ;  "   "   "   "   2
-   DW DGROUP:_bpb ;  "   "   "   "   3
-   DW DGROUP:_bpb ;  "   "   "   "   4
-   DW DGROUP:_bpb ;  "   "   "   "   5
-   DW DGROUP:_bpb ;  "   "   "   "   6
-   DW DGROUP:_bpb ;  "   "   "   "   7
-   DW DGROUP:_bpb ;  "   "   "   "   8
-   DW DGROUP:_bpb ;  "   "   "   "   9
-   DW DGROUP:_bpb ;  "   "   "   "   10
-   DW DGROUP:_bpb ;  "   "   "   "   11
-   DW DGROUP:_bpb ;  "   "   "   "   12
-   DW DGROUP:_bpb ;  "   "   "   "   13
-   DW DGROUP:_bpb ;  "   "   "   "   14
-   DW DGROUP:_bpb ;  "   "   "   "   15
+   DW DGROUP:_bpb1 ;  "   "   "   "   1
+   DW DGROUP:_bpb2 ;  "   "   "   "   2
+   DW DGROUP:_bpb3 ;  "   "   "   "   3
+   DW DGROUP:_bpb4 ;  "   "   "   "   4
+   DW DGROUP:_bpb5 ;  "   "   "   "   5
+   DW DGROUP:_bpb6 ;  "   "   "   "   6
+   DW DGROUP:_bpb7 ;  "   "   "   "   7
+   DW DGROUP:_bpb8 ;  "   "   "   "   8
+   DW DGROUP:_bpb9 ;  "   "   "   "   9
+   DW DGROUP:_bpb10 ;  "   "   "   "   10
+   DW DGROUP:_bpb11 ;  "   "   "   "   11
+   DW DGROUP:_bpb12 ;  "   "   "   "   12
+   DW DGROUP:_bpb13 ;  "   "   "   "   13
+   DW DGROUP:_bpb14 ;  "   "   "   "   14
+   DW DGROUP:_bpb15 ;  "   "   "   "   15
 
 ; This doubleword points to the entry point of the C driver code...
    EXTRN _c_driver:WORD
