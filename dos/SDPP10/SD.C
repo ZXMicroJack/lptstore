@@ -86,6 +86,20 @@ BYTE local_buffer[BLOCKSIZE];
 #define LD_WORD(x) *((WORD *)(BYTE *)(x))
 #define LD_DWORD(x) *((DWORD *)(BYTE *)(x))
 
+void local_memcpy(BYTE far *dst, BYTE far *src, int n) {
+  while (n--) {
+    *dst++ = *src++;
+  }
+}
+
+void local_memset(BYTE far *dst, BYTE d, int n) {
+  while (n--) {
+    *dst++ = d;
+  }
+}
+
+#define fmemcpy local_memcpy
+#define fmemset local_memset
 /*-----------------------------------------------------------------------*/
 /* Load a sector and check if it is an FAT boot sector                   */
 /*-----------------------------------------------------------------------*/
@@ -98,8 +112,10 @@ BYTE check_fs (BYTE unit,
 )
 {
   
+//    cdprintf("[%d]\n", __LINE__);
   if (SDRead(unit, sect, local_buffer, 1) != RES_OK)
     return 3;
+//    cdprintf("[%d]\n", __LINE__);
     
 //    if (disk_read (unit, local_buffer, sect, 1) != RES_OK)
 //       return 3;
@@ -117,6 +133,8 @@ BYTE check_fs (BYTE unit,
 /* Find logical drive and check if the volume is mounted                 */
 /*-----------------------------------------------------------------------*/
 
+WORD disk_initialized = 0;
+
 static
 int find_volume ( 
    BYTE unit,
@@ -129,10 +147,15 @@ int find_volume (
    WORD secsize;
    DWORD bsect;
 
-   stat = disk_status(unit);
-   if (!(stat & STA_NOINIT)) {      /* and the physical drive is kept initialized */
-         return 0;                  /* The file system object is valid */
-   }
+//    stat = disk_status(unit);
+//    if (!(stat & STA_NOINIT)) {      /* and the physical drive is kept initialized */
+//          return 0;                  /* The file system object is valid */
+//    }
+   
+   
+  if (disk_initialized & (1<<unit)) {
+    return 0;
+  }
 
    /* The file system object is not valid. */
    /* Following code attempts to mount the volume. (analyze BPB and initialize the fs object) */
@@ -143,7 +166,10 @@ int find_volume (
    
    /* Find an FAT partition on the drive. Supports only generic partitioning, FDISK and SFD. */
    bsect = 0;
+//    cdprintf("[%d]\n", __LINE__);
    fmt = check_fs(unit, bsect);             /* Load sector 0 and check if it is an FAT boot sector as SFD */
+//    cdprintf("[%d]\n", __LINE__);
+//    cdprintf("fmt = %d\n", fmt);
    if (fmt == 1 || (!fmt && (partno))) { /* Not an FAT boot sector or forced partition number */
       UINT i;         
       DWORD br[4];
@@ -188,6 +214,10 @@ int find_volume (
    bpb->hidden_sectors = 1;
 
    partition_offset = bsect;
+   
+   cdprintf("bpb->total_sectors %d\n", bpb->total_sectors);
+   cdprintf("bpb->sector_count %d\n", bpb->sector_count);
+   disk_initialized |= 1<<unit;
    return 0;
 }
 
@@ -203,7 +233,8 @@ PUBLIC BOOLEAN SDInitialize (BYTE unit, BYTE partno, bpb_t *bpb)
 /* SDMediaCheck */
 PUBLIC BOOLEAN SDMediaCheck (BYTE unit)
 {
-  return TRUE;
+  return FALSE;
+//   return TRUE;
 //   return (disk_result(unit) == RES_OK) ? FALSE : TRUE;
 }
 
@@ -220,17 +251,42 @@ PUBLIC BOOLEAN SDMediaCheck (BYTE unit)
 #include "block0.h"
 #include "block4.h"
 
+#define MAX_BLOCKS 50
+
+BYTE blocks[MAX_BLOCKS][512];
+WORD blockNr[MAX_BLOCKS];
+BYTE blockUnit[MAX_BLOCKS];
+int nrBlocks = 0;
+
 PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
-  int i;
+  int i, j;
+//   cdprintf("SDRead: unit:%d lbn:%d count:%d\n", unit, lbn, count);
   for (i=0; i<count; i++) {
-    if (lbn == 0) fmemcpy(buffer, xaa, 512);
-    else if (lbn == 4) fmemcpy(buffer, xae, 512);
-    else if (lbn == 68) fmemcpy(buffer, xae, 512);
-    else fmemset(buffer, 0, 512);
+//     cdprintf("[%d]\n", __LINE__);
+    for (j=0; j<nrBlocks; j++) {
+//       cdprintf("[%d]\n", __LINE__);
+      if (blockUnit[j] == unit && blockNr[j] == lbn) {
+        fmemcpy(buffer, blocks[j], 512);
+//         cdprintf("SDRead: getting block %d from cache at position %d\n", lbn, j);
+        break;
+      }
+    }
+//     cdprintf("[%d]\n", __LINE__);
+    if (j>=nrBlocks) {
+//       cdprintf("[%d]\n", __LINE__);
+//       cdprintf("lbn = %d\n", lbn);
+      if (lbn == 0) fmemcpy(buffer, xaa, 512);
+      else if (lbn == 4) fmemcpy(buffer, xae, 512);
+      else if (lbn == 68) fmemcpy(buffer, xae, 512);
+      else fmemset(buffer, 0, 512);
+//       cdprintf("2lbn = %d\n", lbn);
+    }
     lbn ++;
     buffer += 512;
+//     cdprintf("[%d]\n", __LINE__);
   }
+//   cdprintf("[%d]\n", __LINE__);
   return RES_OK;
 //   return disk_read (unit, buffer, lbn + partition_offset, count);
 }
@@ -249,6 +305,28 @@ PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 /*                         */
 PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
+  int i, j;
+  
+//   cdprintf("SDWrite: in\n");
+  
+  for (i=0; i<count; i++) {
+    int j;
+    for (j=0; j<nrBlocks; j++) {
+      if (blockUnit[j] == unit && blockNr[j] == lbn) {
+        fmemcpy(blocks[j], buffer, 512);
+        break;
+      }
+    }
+    if (j>=nrBlocks && nrBlocks < MAX_BLOCKS) {
+      fmemcpy(blocks[nrBlocks], buffer, 512);
+      blockUnit[nrBlocks] = unit;
+      blockNr[nrBlocks++] = lbn;
+//       cdprintf("SDWrite: Storing block %d (%d)\n", lbn, nrBlocks);
+    }
+    lbn ++;
+    buffer += 512;
+  }
+//   cdprintf("SDWrite: out\n");
   return RES_OK;
 //   return disk_write (unit, buffer, lbn + partition_offset, count);
 }

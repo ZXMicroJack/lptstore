@@ -183,32 +183,41 @@ BOOLEAN drive_init (rh_t far *rh)
 /* Read Data */
 PUBLIC void ReadBlock (rh_io_t far *rh)
 {
-  WORD lbn, count;  int status;  BYTE far *dta;
-  WORD sendct;
+//   WORD lbn, count;
+  int status;
+//   BYTE far *dta;
+//   WORD sendct;
   if (Debug)
     cdprintf("SD: read block: unit=%d, start=%d, count=%d, dta=%4x:%4x\n",
       rh->rh.unit, rh->start, rh->count, FP_SEG(rh->dta), FP_OFF(rh->dta));
   if (!drive_init ((rh_t far *) rh))  return;
-  count = rh->count,  lbn = rh->start,  dta = rh->dta;
+//   count = rh->count,  lbn = rh->start,  dta = rh->dta;
 
-  while (count > 0) {
-    sendct = (count > 16) ? 16 : count;
-    cdprintf("SD1: in loop count %d sendct %d\n", count, sendct);
-    status = SDRead(rh->rh.unit, lbn, dta, sendct);
-//     status = RES_OK;
-    cdprintf("SD2: in loop count %d sendct %d\n", count, sendct);
-    if (sendct < 1 || status != RES_OK)  {
+    status = SDRead(rh->rh.unit, rh->start, rh->dta, rh->count);
+    if (status != RES_OK)  {
       if (Debug) cdprintf("SD: read error - status=%d\n", status);
-      fmemset(dta, 0, BLOCKSIZE);
+//       fmemset(dta, 0, BLOCKSIZE);
       rh->rh.status = DONE | ERROR | dos_error(status);
       return;
     }
-    lbn += sendct;
-    count -= sendct;
-    dta += (sendct*BLOCKSIZE);
-    cdprintf("SD: in loop count %d sendct %d\n", count, sendct);
-  }
-  cdprintf("SD: done\n");
+
+//   while (count > 0) {
+//     sendct = (count > 16) ? 16 : count;
+//     cdprintf("SD1: in loop count %d sendct %d\n", count, sendct);
+//     status = SDRead(rh->rh.unit, lbn, dta, sendct);
+//     cdprintf("SD2: in loop count %d sendct %d\n", count, sendct);
+//     if (sendct < 1 || status != RES_OK)  {
+//       if (Debug) cdprintf("SD: read error - status=%d\n", status);
+//       fmemset(dta, 0, BLOCKSIZE);
+//       rh->rh.status = DONE | ERROR | dos_error(status);
+//       return;
+//     }
+//     lbn += sendct;
+//     count -= sendct;
+//     dta += (sendct*BLOCKSIZE);
+//     cdprintf("SD: in loop count %d sendct %d\n", count, sendct);
+//   }
+//   cdprintf("SD: done\n");
   rh->rh.status = DONE;
 }
 
@@ -217,25 +226,35 @@ PUBLIC void ReadBlock (rh_io_t far *rh)
 /* Write Data with Verification */
 PUBLIC void WriteBlock (rh_io_t far *rh, BOOLEAN verify)
 {
-  WORD lbn, count;  int status;  BYTE far *dta;
-  WORD sendct;
+//   WORD lbn, count;
+  int status;
+//   BYTE far *dta;
+//   WORD sendct;
   if (Debug)
     cdprintf("SD: write block: unit=%d, start=%d, count=%d, dta=%4x:%4x\n",
       rh->rh.unit, rh->start, rh->count, FP_SEG(rh->dta), FP_OFF(rh->dta));
   if (!drive_init ((rh_t far *) rh))  return;
-  count = rh->count,  lbn = rh->start,  dta = rh->dta;
-  while (count > 0) {
-    sendct = (count > 16) ? 16 : count;
-    status = SDWrite(rh->rh.unit, lbn, dta, sendct);
-    if (status != RES_OK)  {
-      if (Debug) cdprintf("SD: write error - status=%d\n", status);
-      rh->rh.status = DONE | ERROR | dos_error(status);
-      return;
-    }
-    lbn += sendct;
-    count -= sendct;
-    dta += (sendct*BLOCKSIZE);
+//   count = rh->count,  lbn = rh->start,  dta = rh->dta;
+//   while (count > 0) {
+//     sendct = (count > 16) ? 16 : count;
+//     cdprintf("SD: sendct %d count %d\n", sendct, count);
+//     status = SDWrite(rh->rh.unit, lbn, dta, sendct);
+//     if (status != RES_OK)  {
+//       if (Debug) cdprintf("SD: write error - status=%d\n", status);
+//       rh->rh.status = DONE | ERROR | dos_error(status);
+//       return;
+//     }
+//     lbn += sendct;
+//     count -= sendct;
+//     dta += (sendct*BLOCKSIZE);
+//   }
+  status = SDWrite(rh->rh.unit, rh->start, rh->dta, rh->count);
+  if (status != RES_OK)  {
+    if (Debug) cdprintf("SD: write error - status=%d\n", status);
+    rh->rh.status = DONE | ERROR | dos_error(status);
+    return;
   }
+//   cdprintf("SD: write block done\n");
   rh->rh.status = DONE;
 }
 
@@ -369,7 +388,7 @@ PUBLIC void Shutdown (void)
 PUBLIC void Initialize (rh_init_t far *rh)
 {
   WORD brkadr, reboot[2];  int status, i;
-  Debug=1;
+//   Debug=1;
 
   /* The version number is sneakily stored in the device header! */
   cdprintf("SD pport device driver V%c.%c (C) 1994 by Dan Marks\n     based on TU58 by Robert Armstrong\n",
