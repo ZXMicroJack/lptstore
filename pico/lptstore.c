@@ -33,43 +33,30 @@ int hasbyte() {
   return ((readlpt() & 0x10) == 0x10);
 }
 
-int readbyte() {
-  int c, d;
-//   printf("a");
+int readnybble() {
+  int c,d;
+  
+  // wait for host to signal 1 nybble ready, acknowledge 1
   while (((c = readlpt()) & 0x10) == 0x00)
     tight_loop_contents();
-  d = (c & 0xf) << 4;
-//   printf("b");
+  d = c & 0xf;
   gpio_put(19, 1);
-//   printf("c");
-  while (((c = readlpt()) & 0x10) == 0x10)
-    tight_loop_contents();
-//   printf("d");
-  d |= (c & 0xf);
-  gpio_put(19, 0);
 
-  // extra handshake
-  while (((c = readlpt()) & 0x10) == 0x00)
-    tight_loop_contents();
-  gpio_put(19, 1);
-  while (((c = readlpt()) & 0x10) == 0x10)
+  while (((c = readlpt()) & 0x10) != 0x00)
     tight_loop_contents();
   gpio_put(19, 0);
+  printf("[r:%x]", d);
   
-
-
-  // if this is removed then the PC doesn't seem to register the last
-  // port waggle.
-//   sleep_ms(2);
-  
-  
-//   while (((c = readlpt()) & 0x10) == 0x00)
-//     tight_loop_contents();
-//   while (((c = readlpt()) & 0x10) == 0x10)
-//     tight_loop_contents();
-
-  //   printf("e");
   return d;
+}
+
+
+int readbyte() {
+  uint8_t b;
+  
+  b = readnybble() << 4;
+  b |= readnybble();
+  return b;
 }
 
 int readbytes(uint8_t *buff, int len) {
@@ -80,21 +67,27 @@ int readbytes(uint8_t *buff, int len) {
   return 0;
 }
 
+int writenybble(uint8_t b) {
+  int c,d;
+  
+  gpio_put(16, (b & 0x1) ? 0 : 1);
+  gpio_put(17, (b & 0x2) ? 0 : 1);
+  gpio_put(18, (b & 0x4) ? 0 : 1);
+  gpio_put(20, (b & 0x8) ? 0 : 1);
+
+  gpio_put(19, 1); // write upper nybble then raise signal
+  while ((readlpt() & 0x10) == 0x00) // wait for ack
+    tight_loop_contents();
+
+  gpio_put(19, 0); // write upper nybble then raise signal
+  while ((readlpt() & 0x10) != 0x00) // wait for ack
+    tight_loop_contents();
+}
+
+
 void writebyte(uint8_t b) {
-  gpio_put(16, (b & 0x10) ? 0 : 1);
-  gpio_put(17, (b & 0x20) ? 0 : 1);
-  gpio_put(18, (b & 0x40) ? 0 : 1);
-  gpio_put(20, (b & 0x80) ? 0 : 1);
-  gpio_put(19, 1);
-  while ((readlpt() & 0x10) == 0x00)
-    tight_loop_contents();
-  gpio_put(16, (b & 0x01) ? 0 : 1);
-  gpio_put(17, (b & 0x02) ? 0 : 1);
-  gpio_put(18, (b & 0x04) ? 0 : 1);
-  gpio_put(20, (b & 0x08) ? 0 : 1);
-  gpio_put(19, 0);
-  while ((readlpt() & 0x10) == 0x10)
-    tight_loop_contents();
+  writenybble(b >> 4);
+  writenybble(b & 0xf);
 }
 
 void writebytes(uint8_t *d, int len) {
@@ -227,6 +220,7 @@ int main()
         if (c == 'q') break;
         if (hasbyte()) {
           uint8_t cmd = readbyte();
+          printf("cmd:%02X\n", cmd);
           switch(cmd) {
             case LPTS_HELLO:
               buff[0] = LPTS_VERSION_MAJOR;
