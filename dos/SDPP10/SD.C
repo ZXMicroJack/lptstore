@@ -30,6 +30,8 @@
 
 #include <stdio.h>      /* needed for NULL, etc       */
 #include <mem.h>        /* memset, memcopy, etc       */
+#include <dos.h>
+
 #include "standard.h"   /* all definitions for this project */
 #include "sd.h"         /* device protocol and data defintions */
 #include "diskio.h"     /* stuff from sdmm.c module */
@@ -37,6 +39,8 @@
 #include "cprint.h"
 
 DWORD partition_offset = 0;
+
+// #define FAKE_LPT
 
 /* FatFs refers the members in the FAT structures as byte array instead of
 / structure member because the structure is not binary compatible between
@@ -248,6 +252,7 @@ PUBLIC BOOLEAN SDMediaCheck (BYTE unit)
 /*                         */
 /* RETURNS: operation status as reported by the TU58     */
 /*                         */
+#ifdef FAKE_LPT
 #include "block0.h"
 #include "block4.h"
 
@@ -290,7 +295,86 @@ PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
   return RES_OK;
 //   return disk_read (unit, buffer, lbn + partition_offset, count);
 }
+#else
+#define LPTS_HELLO            0x00
+#define LPTS_QUERY_DISKS      0x01
+#define LPTS_QUERY_DISK_CAPS  0x02
+#define LPTS_READ_BLOCK       0x03
+#define LPTS_WRITE_BLOCK      0x04
+        
+#define LPTS_VERSION_MAJOR    0
+#define LPTS_VERSION_MINOR    1
 
+#define LPTBASE 0x378
+#undef outp
+#define outp outportb
+#undef inp
+#define inp inportb
+
+static void init_lpt() {
+  outp(LPTBASE,0x00);
+}
+
+static void write_nybble(BYTE x) {
+  /* set upper nybble and raise signal bit to 1 wait for 1 */
+  outp(LPTBASE, 0x10 | (x & 0xf));
+  while ((inp(LPTBASE+1) & 0x80) == 0);
+  outp(LPTBASE, inp(LPTBASE) & 0xf);
+  while ((inp(LPTBASE+1) & 0x80) != 0);
+}
+
+static BYTE read_nybble() {
+  BYTE r;
+  /* set upper nybble and raise signal bit to 1 wait for 1 */
+  while ((inp(LPTBASE+1) & 0x80) == 0);
+  r = (inp(LPTBASE+1) >> 3) & 0xf;
+  outp(LPTBASE, inp(LPTBASE) | 0x10);
+
+  while ((inp(LPTBASE+1) & 0x80) != 0);
+  outp(LPTBASE, inp(LPTBASE) & 0x0f);
+  return r;
+}
+
+static BYTE read_byte() {
+  BYTE r;
+  r = read_nybble() << 4;
+  r |= read_nybble();
+  return r;
+}
+
+static void write_byte(BYTE b) {
+  write_nybble(b >> 4);
+  write_nybble(b & 0xf);
+}
+
+PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
+{
+  BYTE result;
+  int i, j;
+  int ret = RES_OK; /* optimist */
+  
+  for (j=0; j<count; j++) {
+    write_byte(LPTS_READ_BLOCK);
+    write_byte(unit);
+    write_byte(0x00);
+    write_byte(0x00);
+    write_byte(lbn >> 8);
+    write_byte(lbn & 0xff);
+    result = read_byte();
+    if (!result) {
+      for (i=0; i<512; i++) {
+        *buffer++ = read_byte();
+      }
+    } else {
+      ret = RES_ERROR;
+      break;
+    }
+    lbn++;
+  }
+  
+  return ret;
+}
+#endif
 
 /* SDWrite */
 /*  IMPORTANT!  Blocks are always 512 bytes!  Never more, never less.   */
@@ -303,6 +387,7 @@ PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 /*                         */
 /* RETURNS: operation status as reported by the TU58     */
 /*                         */
+#ifdef FAKE_LPT
 PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
   int i, j;
@@ -330,4 +415,31 @@ PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
   return RES_OK;
 //   return disk_write (unit, buffer, lbn + partition_offset, count);
 }
-
+#else
+PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
+{
+  BYTE result;
+  int i, j;
+  int ret = RES_OK; /* optimist */
+  
+  for (j=0; j<count; j++) {
+    write_byte(LPTS_WRITE_BLOCK);
+    write_byte(unit);
+    write_byte(0x00);
+    write_byte(0x00);
+    write_byte(lbn >> 8);
+    write_byte(lbn & 0xff);
+    for (i=0; i<512; i++) {
+      write_byte(*buffer++);
+    }
+    result = read_byte();
+    if (result) {
+      ret = RES_ERROR;
+      break;
+    }
+    lbn++;
+  }
+  
+  return ret;
+}
+#endif
