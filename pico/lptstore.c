@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
+
 #include <pico/time.h>
 
 #include "hardware/clocks.h"
@@ -45,7 +47,7 @@ int readnybble() {
   while (((c = readlpt()) & 0x10) != 0x00)
     tight_loop_contents();
   gpio_put(19, 0);
-  printf("[r:%x]", d);
+//   printf("[r:%x]", d);
   
   return d;
 }
@@ -105,11 +107,52 @@ uint32_t get_disk_blocks(uint8_t disk) {
   return 32*1024*2;
 }
 
-int read_disk_sector(uint8_t disk, int sector, uint8_t *buff) {
+#include "../dos/SDPP10/block0.h"
+#include "../dos/SDPP10/block4.h"
+
+#define MAX_BLOCKS 200
+
+uint8_t blocks[MAX_BLOCKS][512];
+uint16_t blockNr[MAX_BLOCKS];
+uint8_t blockUnit[MAX_BLOCKS];
+int nrBlocks = 0;
+
+
+int read_disk_sector(uint8_t disk, int lbn, uint8_t *buff) {
+  int j;
+  
+  for (j=0; j<nrBlocks; j++) {
+    if (blockUnit[j] == disk && blockNr[j] == lbn) {
+      memcpy(buff, blocks[j], 512);
+      printf("read_disk_sector: getting block %d:%d from cache at position %d\n", disk, lbn, j);
+      break;
+    }
+  }
+  
+  if (j>=nrBlocks) {
+    if (lbn == 0) memcpy(buff, xaa, 512);
+    else if (lbn == 4) memcpy(buff, xae, 512);
+    else if (lbn == 68) memcpy(buff, xae, 512);
+    else memset(buff, 0, 512);
+  }
   return 0;
 }
 
-int write_disk_sector(uint8_t disk, int sector, uint8_t *buff) {
+int write_disk_sector(uint8_t disk, int lbn, uint8_t *buff) {
+  int j;
+  for (j=0; j<nrBlocks; j++) {
+    if (blockUnit[j] == disk && blockNr[j] == lbn) {
+      memcpy(blocks[j], buff, 512);
+      break;
+    }
+  }
+
+  if (j>=nrBlocks && nrBlocks < MAX_BLOCKS) {
+    memcpy(blocks[nrBlocks], buff, 512);
+    blockUnit[nrBlocks] = disk;
+    blockNr[nrBlocks++] = lbn;
+    printf("write_disk_sector: Storing block %d:%d (%d)\n", disk, lbn, nrBlocks);
+  }
   return 0;
 }
 
