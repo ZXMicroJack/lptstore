@@ -19,4 +19,6 @@ int SDWrite (WORD, WORD, BYTE far *, WORD count);
 /* SDMediaCheck - check if media changed */
 BOOLEAN SDMediaCheck (BYTE unit);
 
+PUBLIC void SDInit(void);
+
 #endif

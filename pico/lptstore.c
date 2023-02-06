@@ -35,17 +35,40 @@ int hasbyte() {
   return ((readlpt() & 0x10) == 0x10);
 }
 
+#define PROTOCOL_TIMEOUT 200000
+
+int waittimeout(int mask, int value) {
+  int c;
+  uint64_t time_now;
+  
+  time_now = time_us_64();
+  while (((c = readlpt()) & mask) == value && time_us_64() < (time_now + PROTOCOL_TIMEOUT))
+    tight_loop_contents();
+  
+  return (c & mask) == value ? -1 : c;
+ }
+
 int readnybble() {
   int c,d;
   
   // wait for host to signal 1 nybble ready, acknowledge 1
-  while (((c = readlpt()) & 0x10) == 0x00)
-    tight_loop_contents();
-  d = c & 0xf;
+//   while (((c = readlpt()) & 0x10) == 0x00)
+//     tight_loop_contents();
+  c = waittimeout(0x10, 0x00);
+  if (c < 0) {
+    gpio_put(19, 0);
+    return -1;
+  }
+  d = readlpt() & 0xf;
   gpio_put(19, 1);
 
-  while (((c = readlpt()) & 0x10) != 0x00)
-    tight_loop_contents();
+//   while (((c = readlpt()) & 0x10) != 0x00)
+//     tight_loop_contents();
+  c = waittimeout(0x10, 0x10);
+  if (c < 0) {
+    return -1;
+  }
+
   gpio_put(19, 0);
 //   printf("[r:%x]", d);
   
@@ -55,16 +78,28 @@ int readnybble() {
 
 int readbyte() {
   uint8_t b;
+  int i;
   
-  b = readnybble() << 4;
-  b |= readnybble();
+  i = readnybble();
+  if (i < 0) {
+    return -1;
+  }
+  b = i << 4;
+
+  i = readnybble();
+  if (i < 0) {
+    return -1;
+  }
+  b |= i;
   return b;
 }
 
 int readbytes(uint8_t *buff, int len) {
-  int i;
+  int i, r;
   for (i=0; i<len; i++) {
-    buff[i] = readbyte();
+    r = readbyte();
+    if (r < 0) return -1;
+    buff[i] = r;
   }
   return 0;
 }
@@ -78,25 +113,41 @@ int writenybble(uint8_t b) {
   gpio_put(20, (b & 0x8) ? 0 : 1);
 
   gpio_put(19, 1); // write upper nybble then raise signal
-  while ((readlpt() & 0x10) == 0x00) // wait for ack
-    tight_loop_contents();
+  c = waittimeout(0x10, 0x00);
+  if (c < 0) {
+    gpio_put(19, 0);
+    return -1;
+  }
+//   while ((readlpt() & 0x10) == 0x00) // wait for ack
+//     tight_loop_contents();
 
   gpio_put(19, 0); // write upper nybble then raise signal
-  while ((readlpt() & 0x10) != 0x00) // wait for ack
-    tight_loop_contents();
+//   while ((readlpt() & 0x10) != 0x00) // wait for ack
+//     tight_loop_contents();
+  c = waittimeout(0x10, 0x10);
+  if (c < 0) {
+    gpio_put(19, 0);
+    return -1;
+  }
+
+  return 0;
 }
 
 
-void writebyte(uint8_t b) {
-  writenybble(b >> 4);
-  writenybble(b & 0xf);
+int writebyte(uint8_t b) {
+  if (writenybble(b >> 4) < 0) return -1;
+  if (writenybble(b & 0xf) < 0) return -1;
+  return 0;
 }
 
-void writebytes(uint8_t *d, int len) {
+int writebytes(uint8_t *d, int len) {
   int i;
   for (i=0; i<len; i++) {
-    writebyte(d[i]);
+    if (writebyte(d[i]) < 0) {
+      return -1;
+    }
   }
+  return 0;
 }
 
 int init_disk(void) {
@@ -263,62 +314,68 @@ int main()
         if (c == 'q') break;
         if (hasbyte()) {
           uint8_t cmd = readbyte();
-          printf("cmd:%02X\n", cmd);
-          switch(cmd) {
-            case LPTS_HELLO:
-              buff[0] = LPTS_VERSION_MAJOR;
-              buff[1] = LPTS_VERSION_MINOR;
-              writebytes(buff, 2);
-              break;
-            case LPTS_QUERY_DISKS: {
-              uint32_t w = get_disks();
-              buff[0] = w >> 24;
-              buff[1] = (w >> 16) & 0xff;
-              buff[2] = (w >> 8) & 0xff;
-              buff[3] = w  & 0xff;
-              writebytes(buff, 4);
-              break;
-            }
-            case LPTS_QUERY_DISK_CAPS: {
-              uint32_t w;
-              readbytes(buff, 1);
-              w = get_disk_blocks(buff[0]);
-              buff[0] = w >> 24;
-              buff[1] = (w >> 16) & 0xff;
-              buff[2] = (w >> 8) & 0xff;
-              buff[3] = w  & 0xff;
-              writebytes(buff, 4);
-              break;
-            }
-            case LPTS_READ_BLOCK: {
-              readbytes(buff, 5);
-              
-              uint8_t drv = buff[0];
-              uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
-              uint8_t r = read_disk_sector(drv, lba, buff);
-              
-              writebyte(r);
-              if (!r) {
-                writebytes(buff, 512);
+          if (cmd != 0xff) {
+            printf("cmd:%02X\n", cmd);
+            switch(cmd) {
+              case LPTS_HELLO:
+                buff[0] = LPTS_VERSION_MAJOR;
+                buff[1] = LPTS_VERSION_MINOR;
+                writebytes(buff, 2);
+                break;
+              case LPTS_QUERY_DISKS: {
+                uint32_t w = get_disks();
+                buff[0] = w >> 24;
+                buff[1] = (w >> 16) & 0xff;
+                buff[2] = (w >> 8) & 0xff;
+                buff[3] = w  & 0xff;
+                writebytes(buff, 4);
+                break;
               }
-              break;
-            }
-            case LPTS_WRITE_BLOCK: {
-              readbytes(buff, 5);
-              
-              uint8_t drv = buff[0];
-              uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
-              
-              readbytes(buff, 512);
-              uint8_t r = write_disk_sector(drv, lba, buff);
-              
-              writebyte(r);
-              break;
-            }
-              
-          }
-          
-        }
+              case LPTS_QUERY_DISK_CAPS: {
+                uint32_t w;
+                if (readbytes(buff, 1) < 0) 
+                  break;
+                w = get_disk_blocks(buff[0]);
+                buff[0] = w >> 24;
+                buff[1] = (w >> 16) & 0xff;
+                buff[2] = (w >> 8) & 0xff;
+                buff[3] = w  & 0xff;
+                // this will timeout and break anyway.
+                writebytes(buff, 4);
+                break;
+              }
+              case LPTS_READ_BLOCK: {
+                if (readbytes(buff, 5) < 0)
+                  break;
+                
+                uint8_t drv = buff[0];
+                uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
+                uint8_t r = read_disk_sector(drv, lba, buff);
+                
+                if (writebyte(r) < 0) break;
+                if (!r) {
+                  // this will timeout and break anyway.
+                  writebytes(buff, 512);
+                }
+                break;
+              }
+              case LPTS_WRITE_BLOCK: {
+                if (readbytes(buff, 5) < 0) break;
+                
+                uint8_t drv = buff[0];
+                uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
+                
+                if (readbytes(buff, 512) < 0) break;
+                uint8_t r = write_disk_sector(drv, lba, buff);
+                
+                // this will timeout and break anyway.
+                writebyte(r); 
+                break;
+              }
+                
+            } // switch
+          } // if
+        } // if hasbyte
       }
       printf("Leaving protocol mode.\n");
     }

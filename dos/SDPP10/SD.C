@@ -443,3 +443,37 @@ PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
   return ret;
 }
 #endif
+
+#ifdef FAKE_LPT
+PUBLIC void SDInit(void) {
+}
+#else
+#include <bios.h>
+
+static unsigned long timebase = 0;
+static unsigned long lastticks = 0;
+unsigned long get_ticks() {
+  unsigned long ticks;
+  _AH = 0x00;
+  asm INT 0x1a;
+  
+  ticks = timebase + ((_CX << 16) | _DX);
+  if (ticks < lastticks) {
+    timebase += 0x1800B0;
+  }
+  lastticks = ticks;
+
+  return timebase + ticks;
+}
+
+PUBLIC void SDInit(void) {
+  extern volatile unsigned long timer_ticks;
+  unsigned long time_now;
+
+  cdprintf("SDInit: initializing parallel port\n");
+  outp(LPTBASE, 0x00);
+  time_now = get_ticks();
+  while (get_ticks() < (time_now + 36));
+  cdprintf("SDInit: done\n");
+}
+#endif

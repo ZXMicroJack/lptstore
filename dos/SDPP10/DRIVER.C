@@ -56,6 +56,8 @@ BOOLEAN InitNeeded[NR_DRIVES];  /* TRUE if we need to (re) initialize  */
 WORD  RebootVector[2];  /* previous INT 19H vector contents */
 extern DWORD partitionoffset;
 
+WORD  TimerVector[2];  /* previous INT 08H vector contents */
+
 extern BYTE  sd_card_check;
 extern BYTE  portbase;
 
@@ -374,6 +376,13 @@ PUBLIC void Shutdown (void)
   JMPVECTOR(RebootVector);
 }
 
+volatile unsigned long timer_ticks = 0;
+
+PUBLIC void Timer (void) {
+  timer_ticks ++;
+  cdprintf("!");
+  JMPVECTOR(TimerVector);
+}
 
 /*   WARNING!!  WARNING!!  WARNING!!  WARNING!!  WARNING!!  WARNING!!   */
 /*                         */
@@ -399,8 +408,7 @@ PUBLIC void Shutdown (void)
 PUBLIC void Initialize (rh_init_t far *rh)
 {
   WORD brkadr, reboot[2];  int status, i;
-//   Debug=1;
-  
+//   Debug=1;  
   force_init();
 //   for (i=1; i<NR_DRIVES; i++) {
 //     fmemcpy(&bpb[i], &bpb[0], sizeof bpb[0]);
@@ -426,6 +434,16 @@ PUBLIC void Initialize (rh_init_t far *rh)
     cdprintf("SD: CS=%4x, DS=%4x, SS=%4x, SP=%4x, break=%4x\n",
      _CS, _DS, _SS, _SP, brkadr);
 
+  // register timer
+//   reboot[0] = ((WORD) &Timer) + ((_CS - _DS) << 4);
+//   reboot[1] = _CS;
+//   GETVECTOR(0x08, TimerVector);
+//   SETVECTOR(0x08, reboot);
+//   if (Debug)
+//     cdprintf("SD: timer vector = %4x:%4x, old vector = %4x, %4x\n",
+//     reboot[1], reboot[0], TimerVector[1], TimerVector[0]);
+  SDInit();
+    
 /* Try to make contact with the drive... */
   if (Debug) cdprintf("SD: initializing drive\n");
   if (!SDInitialize(rh->rh.unit, partition_number, &bpb[rh->rh.unit])) {
@@ -434,7 +452,9 @@ PUBLIC void Initialize (rh_init_t far *rh)
   }
   cdprintf("SD: rh = %4x:%4x\n", FP_SEG(rh), FP_OFF(rh));
 
-  reboot[0] = ((WORD) &reboot) + ((_CS - _DS) << 4);
+  
+  // register reboot vector
+  reboot[0] = ((WORD) &Shutdown) + ((_CS - _DS) << 4);
   reboot[1] = _CS;
   GETVECTOR(0x19, RebootVector);
   SETVECTOR(0x19, reboot);
@@ -474,7 +494,8 @@ return;
   /* (1) the break address to the starting address, (2) the number of   */
   /* units to 0, and (3) the error flag.           */
 unload1:
-  { };
+//   SETVECTOR(0x08, TimerVector); // restore timer interrupt
+  {}
 unload2:
   rh->brkadr = MK_FP(_DS, 0);  rh->nunits = 0;  rh->rh.status = ERROR;
 }
