@@ -14,6 +14,7 @@
 #include "pico/bootrom.h"
 
 #include "lptcomms.h"
+#include "disk.h"
 
 #ifdef DEBUG
 #define debug(a) printf a
@@ -27,189 +28,6 @@
 #define sdebug(a)
 #endif
 
-#if 0
-int readlpt() {
-  uint32_t dw = gpio_get_all() >> 20;
-  uint8_t b = (dw >> 8) | ((dw&0x80) >> 6) | ((dw&0x40) >> 4) | ((dw&0x04) << 1) | ((dw&0x02) << 3);
-  return b;
-}
-
-int hasbyte() {
-  return ((readlpt() & 0x10) == 0x10);
-}
-
-#define PROTOCOL_TIMEOUT 200000
-
-int waittimeout(int mask, int value) {
-  int c;
-  uint64_t time_now;
-  
-  time_now = time_us_64();
-  while (((c = readlpt()) & mask) == value && time_us_64() < (time_now + PROTOCOL_TIMEOUT))
-    tight_loop_contents();
-  
-  return (c & mask) == value ? -1 : c;
- }
-
-int readnybble() {
-  int c,d;
-  
-  // wait for host to signal 1 nybble ready, acknowledge 1
-//   while (((c = readlpt()) & 0x10) == 0x00)
-//     tight_loop_contents();
-  c = waittimeout(0x10, 0x00);
-  if (c < 0) {
-    gpio_put(19, 0);
-    return -1;
-  }
-  d = readlpt() & 0xf;
-  gpio_put(19, 1);
-
-//   while (((c = readlpt()) & 0x10) != 0x00)
-//     tight_loop_contents();
-  c = waittimeout(0x10, 0x10);
-  if (c < 0) {
-    return -1;
-  }
-
-  gpio_put(19, 0);
-//   printf("[r:%x]", d);
-  
-  return d;
-}
-
-
-int readbyte() {
-  uint8_t b;
-  int i;
-  
-  i = readnybble();
-  if (i < 0) {
-    return -1;
-  }
-  b = i << 4;
-
-  i = readnybble();
-  if (i < 0) {
-    return -1;
-  }
-  b |= i;
-  return b;
-}
-
-int readbytes(uint8_t *buff, int len) {
-  int i, r;
-  for (i=0; i<len; i++) {
-    r = readbyte();
-    if (r < 0) return -1;
-    buff[i] = r;
-  }
-  return 0;
-}
-
-int writenybble(uint8_t b) {
-  int c,d;
-  
-  gpio_put(16, (b & 0x1) ? 0 : 1);
-  gpio_put(17, (b & 0x2) ? 0 : 1);
-  gpio_put(18, (b & 0x4) ? 0 : 1);
-  gpio_put(20, (b & 0x8) ? 0 : 1);
-
-  gpio_put(19, 1); // write upper nybble then raise signal
-  c = waittimeout(0x10, 0x00);
-  if (c < 0) {
-    gpio_put(19, 0);
-    return -1;
-  }
-//   while ((readlpt() & 0x10) == 0x00) // wait for ack
-//     tight_loop_contents();
-
-  gpio_put(19, 0); // write upper nybble then raise signal
-//   while ((readlpt() & 0x10) != 0x00) // wait for ack
-//     tight_loop_contents();
-  c = waittimeout(0x10, 0x10);
-  if (c < 0) {
-    gpio_put(19, 0);
-    return -1;
-  }
-
-  return 0;
-}
-
-
-int writebyte(uint8_t b) {
-  if (writenybble(b >> 4) < 0) return -1;
-  if (writenybble(b & 0xf) < 0) return -1;
-  return 0;
-}
-
-int writebytes(uint8_t *d, int len) {
-  int i;
-  for (i=0; i<len; i++) {
-    if (writebyte(d[i]) < 0) {
-      return -1;
-    }
-  }
-  return 0;
-}
-#endif
-
-int init_disk(void) {
-  return 0;
-}
-uint32_t get_disks(void) { return 0xffff; }
-uint32_t get_disk_blocks(uint8_t disk) {
-  return 32*1024*2;
-}
-
-#include "../dos/SDPP10/block0.h"
-#include "../dos/SDPP10/block4.h"
-
-#define MAX_BLOCKS 200
-
-uint8_t blocks[MAX_BLOCKS][512];
-uint16_t blockNr[MAX_BLOCKS];
-uint8_t blockUnit[MAX_BLOCKS];
-int nrBlocks = 0;
-
-
-int read_disk_sector(uint8_t disk, int lbn, uint8_t *buff) {
-  int j;
-  
-  for (j=0; j<nrBlocks; j++) {
-    if (blockUnit[j] == disk && blockNr[j] == lbn) {
-      memcpy(buff, blocks[j], 512);
-      printf("read_disk_sector: getting block %d:%d from cache at position %d\n", disk, lbn, j);
-      break;
-    }
-  }
-  
-  if (j>=nrBlocks) {
-    if (lbn == 0) memcpy(buff, xaa, 512);
-    else if (lbn == 4) memcpy(buff, xae, 512);
-    else if (lbn == 68) memcpy(buff, xae, 512);
-    else memset(buff, 0, 512);
-  }
-  return 0;
-}
-
-int write_disk_sector(uint8_t disk, int lbn, uint8_t *buff) {
-  int j;
-  for (j=0; j<nrBlocks; j++) {
-    if (blockUnit[j] == disk && blockNr[j] == lbn) {
-      memcpy(blocks[j], buff, 512);
-      break;
-    }
-  }
-
-  if (j>=nrBlocks && nrBlocks < MAX_BLOCKS) {
-    memcpy(blocks[nrBlocks], buff, 512);
-    blockUnit[nrBlocks] = disk;
-    blockNr[nrBlocks++] = lbn;
-    printf("write_disk_sector: Storing block %d:%d (%d)\n", disk, lbn, nrBlocks);
-  }
-  return 0;
-}
 
 int main()
 {
@@ -230,6 +48,7 @@ int main()
 //   gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
   
   lptcomms_init();
+  disk_init();
 
 #if 0
   int lut[] = {21,22,26,27,28};
@@ -327,7 +146,7 @@ int main()
                 lptcomms_writebytes(buff, 2);
                 break;
               case LPTS_QUERY_DISKS: {
-                uint32_t w = get_disks();
+                uint32_t w = disk_get_drives();
                 buff[0] = w >> 24;
                 buff[1] = (w >> 16) & 0xff;
                 buff[2] = (w >> 8) & 0xff;
@@ -339,7 +158,7 @@ int main()
                 uint32_t w;
                 if (lptcomms_readbytes(buff, 1) < 0) 
                   break;
-                w = get_disk_blocks(buff[0]);
+                w = disk_get_blocks(buff[0]);
                 buff[0] = w >> 24;
                 buff[1] = (w >> 16) & 0xff;
                 buff[2] = (w >> 8) & 0xff;
@@ -354,7 +173,7 @@ int main()
                 
                 uint8_t drv = buff[0];
                 uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
-                uint8_t r = read_disk_sector(drv, lba, buff);
+                uint8_t r = disk_read_sector(drv, lba, buff);
                 
                 if (lptcomms_writebyte(r) < 0) break;
                 if (!r) {
@@ -370,7 +189,7 @@ int main()
                 uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
                 
                 if (lptcomms_readbytes(buff, 512) < 0) break;
-                uint8_t r = write_disk_sector(drv, lba, buff);
+                uint8_t r = disk_write_sector(drv, lba, buff);
                 
                 // this will timeout and break anyway.
                 lptcomms_writebyte(r); 

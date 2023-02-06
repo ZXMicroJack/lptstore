@@ -23,7 +23,7 @@ include(example_auto_set_url.cmake)
 # include_directories(../engine ../sf2 .. ../pm_embedded)
 
 # sine wave over i2s test program
-add_executable(lptstore lptstore.c lptcomms.c)
+add_executable(lptstore lptstore.c lptcomms.c diskfake.c)
 pico_set_binary_type(lptstore no_flash)
 target_link_libraries(lptstore pico_stdlib)
 pico_enable_stdio_usb(lptstore 1)
