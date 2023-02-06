@@ -13,6 +13,8 @@
 #include "pico/binary_info.h"
 #include "pico/bootrom.h"
 
+#include "lptcomms.h"
+
 #ifdef DEBUG
 #define debug(a) printf a
 #else
@@ -25,6 +27,7 @@
 #define sdebug(a)
 #endif
 
+#if 0
 int readlpt() {
   uint32_t dw = gpio_get_all() >> 20;
   uint8_t b = (dw >> 8) | ((dw&0x80) >> 6) | ((dw&0x40) >> 4) | ((dw&0x04) << 1) | ((dw&0x02) << 3);
@@ -149,6 +152,7 @@ int writebytes(uint8_t *d, int len) {
   }
   return 0;
 }
+#endif
 
 int init_disk(void) {
   return 0;
@@ -224,7 +228,10 @@ int main()
   // set up error led
 //   gpio_init(PICO_DEFAULT_LED_PIN);
 //   gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+  
+  lptcomms_init();
 
+#if 0
   int lut[] = {21,22,26,27,28};
   for (int i=0; i<(sizeof lut / sizeof lut[0]); i++) {
     gpio_init(lut[i]);
@@ -242,7 +249,8 @@ int main()
     gpio_pull_up(lut2[i]);
 //     gpio_set_function(i, GPIO_FUNC_SIO);
   }
-  
+#endif
+
 //   gpio_init(PICO_DEFAULT_LED_PIN);
 //   
 //   uint64_t started;
@@ -271,26 +279,22 @@ int main()
     }
     
     if (c == 'w') {
-      printf("Reading: %02X\n", readbyte());
+      printf("Reading: %02X\n", lptcomms_readbyte());
     }
     if (c == 'e') {
       printf("Emit: %02X\n", b);
-      writebyte(b);
+      lptcomms_writebyte(b);
       b <<= 1;
       if (!b) b = 1;
     }
     
     if (c == 'd') {
-      printf("in:%02X\n", readlpt());
+      printf("in:%02X\n", lptcomms_readlpt());
     }
     
     if (c == 'f') {
       printf("f:%02X\n", b);
-      gpio_put(16, (b & 0x01) ? 0 : 1);
-      gpio_put(17, (b & 0x02) ? 0 : 1);
-      gpio_put(18, (b & 0x04) ? 0 : 1);
-      gpio_put(20, (b & 0x08) ? 0 : 1);
-      gpio_put(19, (b & 0x10) ? 1 : 0);
+      lptcomms_writelpt(b);
       b <<= 1;
       if (b == 0x20) b = 1;
     }
@@ -312,15 +316,15 @@ int main()
 
         int c = getchar_timeout_us(0);
         if (c == 'q') break;
-        if (hasbyte()) {
-          uint8_t cmd = readbyte();
+        if (lptcomms_hasbyte()) {
+          uint8_t cmd = lptcomms_readbyte();
           if (cmd != 0xff) {
             printf("cmd:%02X\n", cmd);
             switch(cmd) {
               case LPTS_HELLO:
                 buff[0] = LPTS_VERSION_MAJOR;
                 buff[1] = LPTS_VERSION_MINOR;
-                writebytes(buff, 2);
+                lptcomms_writebytes(buff, 2);
                 break;
               case LPTS_QUERY_DISKS: {
                 uint32_t w = get_disks();
@@ -328,12 +332,12 @@ int main()
                 buff[1] = (w >> 16) & 0xff;
                 buff[2] = (w >> 8) & 0xff;
                 buff[3] = w  & 0xff;
-                writebytes(buff, 4);
+                lptcomms_writebytes(buff, 4);
                 break;
               }
               case LPTS_QUERY_DISK_CAPS: {
                 uint32_t w;
-                if (readbytes(buff, 1) < 0) 
+                if (lptcomms_readbytes(buff, 1) < 0) 
                   break;
                 w = get_disk_blocks(buff[0]);
                 buff[0] = w >> 24;
@@ -341,35 +345,35 @@ int main()
                 buff[2] = (w >> 8) & 0xff;
                 buff[3] = w  & 0xff;
                 // this will timeout and break anyway.
-                writebytes(buff, 4);
+                lptcomms_writebytes(buff, 4);
                 break;
               }
               case LPTS_READ_BLOCK: {
-                if (readbytes(buff, 5) < 0)
+                if (lptcomms_readbytes(buff, 5) < 0)
                   break;
                 
                 uint8_t drv = buff[0];
                 uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
                 uint8_t r = read_disk_sector(drv, lba, buff);
                 
-                if (writebyte(r) < 0) break;
+                if (lptcomms_writebyte(r) < 0) break;
                 if (!r) {
                   // this will timeout and break anyway.
-                  writebytes(buff, 512);
+                  lptcomms_writebytes(buff, 512);
                 }
                 break;
               }
               case LPTS_WRITE_BLOCK: {
-                if (readbytes(buff, 5) < 0) break;
+                if (lptcomms_readbytes(buff, 5) < 0) break;
                 
                 uint8_t drv = buff[0];
                 uint32_t lba = (buff[1] << 24) | (buff[2] << 16) | (buff[3] << 8) | buff[4];
                 
-                if (readbytes(buff, 512) < 0) break;
+                if (lptcomms_readbytes(buff, 512) < 0) break;
                 uint8_t r = write_disk_sector(drv, lba, buff);
                 
                 // this will timeout and break anyway.
-                writebyte(r); 
+                lptcomms_writebyte(r); 
                 break;
               }
                 
