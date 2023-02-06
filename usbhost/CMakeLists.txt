@@ -40,7 +40,7 @@ target_link_libraries(host_cdc_msc_hid PUBLIC pico_stdlib tinyusb_host tinyusb_b
 pico_add_extra_outputs(host_cdc_msc_hid)
 pico_enable_stdio_usb(host_cdc_msc_hid 0)
 pico_enable_stdio_uart(host_cdc_msc_hid 1)
-# pico_set_binary_type(host_cdc_msc_hid no_flash)
+pico_set_binary_type(host_cdc_msc_hid no_flash)
 
 target_link_options(host_cdc_msc_hid PRIVATE -Xlinker --print-memory-usage -g)
 target_compile_options(host_cdc_msc_hid PRIVATE -Wall -Wextra -g  -DPICO_SHARED_IRQ_HANDLER_HIGHEST_ORDER_PRIORITY=PICO_HIGHEST_IRQ_PRIORITY)

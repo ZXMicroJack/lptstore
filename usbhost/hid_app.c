@@ -36,6 +36,7 @@
 
 #define MAX_REPORT  4
 
+#if CFG_TUH_HID
 static uint8_t const keycode2ascii[128][2] =  { HID_KEYCODE_TO_ASCII };
 
 // Each HID instance can has multiple reports
@@ -294,3 +295,4 @@ static void process_generic_report(uint8_t dev_addr, uint8_t instance, uint8_t c
     }
   }
 }
+#endif
