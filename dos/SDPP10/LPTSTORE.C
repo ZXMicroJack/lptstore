@@ -1,5 +1,3 @@
-/* sd.c                        */
-/*                         */
 /* Copyright (C) 1994 by Robert Armstrong          */
 /*                         */
 /* This program is free software; you can redistribute it and/or modify */
@@ -19,10 +17,10 @@
 /*                         */
 /*   The functions provided are:             */
 /*                         */
-/* SDInitialize - establish two way communications with the drive */
-/* SDRead       - read one 512 byte logical block from the tape   */
-/* SDWrite      - write one 512 byte logical block to the tape */
-/* SDMediaCheck - see if card detect has changed */
+/* LPTInitialize - establish two way communications with the drive */
+/* LPTRead       - read one 512 byte logical block from the tape   */
+/* LPTWrite      - write one 512 byte logical block to the tape */
+/* LPTMediaCheck - see if card detect has changed */
 /*                         */
 /*   Normally the SDInitialize routine would be called  */
 /* during the DOS device driver initialization, and then the SDRead and */
@@ -33,15 +31,20 @@
 #include <dos.h>
 
 #include "standard.h"   /* all definitions for this project */
-#include "sd.h"         /* device protocol and data defintions */
-#include "diskio.h"     /* stuff from sdmm.c module */
+#include "lptstore.h"         /* device protocol and data defintions */
+// #include "diskio.h"     /* stuff from sdmm.c module */
 #include "driver.h"
 #include "cprint.h"
 
+static WORD portbases[5] = {0x3BC,0x378,0x278,0x3E8,0x2E8};
+
+BYTE sd_card_check = 0;
+BYTE portbase = 1;
 DWORD partition_offset = 0;
 
+int LPTBASE = 0x378;
 // #define FAKE_LPT
-
+extern BOOLEAN Debug;
 /* FatFs refers the members in the FAT structures as byte array instead of
 / structure member because the structure is not binary compatible between
 / different platforms */
@@ -115,14 +118,8 @@ BYTE check_fs (BYTE unit,
    DWORD sect  /* Sector# (lba) to check if it is an FAT boot record or not */
 )
 {
-  
-//    cdprintf("[%d]\n", __LINE__);
-  if (SDRead(unit, sect, local_buffer, 1) != RES_OK)
+  if (LPTRead(unit, sect, local_buffer, 1) != RES_OK)
     return 3;
-//    cdprintf("[%d]\n", __LINE__);
-    
-//    if (disk_read (unit, local_buffer, sect, 1) != RES_OK)
-//       return 3;
    if (LD_WORD(&local_buffer[BS_55AA]) != 0xAA55) /* Check boot record signature (always placed at offset 510 even if the sector size is >512) */
       return 2;
    if ((LD_DWORD(&local_buffer[BS_FilSysType]) & 0xFFFFFF) == 0x544146)      /* Check "FAT" string */
@@ -147,16 +144,9 @@ int find_volume (
 )
 {
    BYTE fmt;
-   DSTATUS stat;
    WORD secsize;
    DWORD bsect;
 
-//    stat = disk_status(unit);
-//    if (!(stat & STA_NOINIT)) {      /* and the physical drive is kept initialized */
-//          return 0;                  /* The file system object is valid */
-//    }
-   
-   
   if (disk_initialized & (1<<unit)) {
     return 0;
   }
@@ -164,16 +154,10 @@ int find_volume (
    /* The file system object is not valid. */
    /* Following code attempts to mount the volume. (analyze BPB and initialize the fs object) */
 
-   stat = disk_initialize(unit);    /* Initialize the physical drive */
-   if (stat & STA_NOINIT)           /* Check if the initialization succeeded */
-      return -1;                    /* Failed to initialize due to no medium or hard error */
-   
    /* Find an FAT partition on the drive. Supports only generic partitioning, FDISK and SFD. */
    bsect = 0;
 //    cdprintf("[%d]\n", __LINE__);
    fmt = check_fs(unit, bsect);             /* Load sector 0 and check if it is an FAT boot sector as SFD */
-//    cdprintf("[%d]\n", __LINE__);
-//    cdprintf("fmt = %d\n", fmt);
    if (fmt == 1 || (!fmt && (partno))) { /* Not an FAT boot sector or forced partition number */
       UINT i;         
       DWORD br[4];
@@ -222,24 +206,38 @@ int find_volume (
    cdprintf("bpb->total_sectors %d\n", bpb->total_sectors);
    cdprintf("bpb->sector_count %d\n", bpb->sector_count);
    disk_initialized |= 1<<unit;
+
+  if (Debug)
+  {   
+      cdprintf("lptstore: BPB data:\n");
+      cdprintf("Sector Size: %d   ", bpb->sector_size);
+      cdprintf("Allocation unit: %d\n", bpb->allocation_unit);
+      cdprintf("Reserved sectors: %d  ", bpb->reserved_sectors);
+      cdprintf("Fat Count: %d\n", bpb->fat_count);
+      cdprintf("Directory size: %d  ", bpb->directory_size);
+      cdprintf("Total sectors: %d\n", bpb->total_sectors);
+      cdprintf("Media descriptor: %x  ", bpb->media_descriptor);
+      cdprintf("Fat sectors: %d\n", bpb->fat_sectors);
+      cdprintf("Track size: %d  ", bpb->track_size);
+      cdprintf("Head count: %d\n", bpb->head_count);
+      cdprintf("Hidden sectors: %d  ", bpb->hidden_sectors);
+      cdprintf("Sector Ct 32 hex: %L\n", bpb->sector_count);
+      cdprintf("Partition offset: %L\n", partition_offset);
+   }
+
    return 0;
 }
 
-
-/* SDInitialize */
-PUBLIC BOOLEAN SDInitialize (BYTE unit, BYTE partno, bpb_t *bpb)
+PUBLIC BOOLEAN LPTInitialize (BYTE unit, BYTE partno, bpb_t *bpb)
 {
   if (find_volume(unit,partno,bpb) < 0)
       return FALSE;
   return TRUE;
 }
 
-/* SDMediaCheck */
-PUBLIC BOOLEAN SDMediaCheck (BYTE unit)
+PUBLIC BOOLEAN LPTMediaCheck (BYTE unit)
 {
   return FALSE;
-//   return TRUE;
-//   return (disk_result(unit) == RES_OK) ? FALSE : TRUE;
 }
 
 /* SDRead */
@@ -263,37 +261,26 @@ WORD blockNr[MAX_BLOCKS];
 BYTE blockUnit[MAX_BLOCKS];
 int nrBlocks = 0;
 
-PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
+PUBLIC int LPTRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
   int i, j;
-//   cdprintf("SDRead: unit:%d lbn:%d count:%d\n", unit, lbn, count);
   for (i=0; i<count; i++) {
-//     cdprintf("[%d]\n", __LINE__);
     for (j=0; j<nrBlocks; j++) {
-//       cdprintf("[%d]\n", __LINE__);
       if (blockUnit[j] == unit && blockNr[j] == lbn) {
         fmemcpy(buffer, blocks[j], 512);
-//         cdprintf("SDRead: getting block %d from cache at position %d\n", lbn, j);
         break;
       }
     }
-//     cdprintf("[%d]\n", __LINE__);
     if (j>=nrBlocks) {
-//       cdprintf("[%d]\n", __LINE__);
-//       cdprintf("lbn = %d\n", lbn);
       if (lbn == 0) fmemcpy(buffer, xaa, 512);
       else if (lbn == 4) fmemcpy(buffer, xae, 512);
       else if (lbn == 68) fmemcpy(buffer, xae, 512);
       else fmemset(buffer, 0, 512);
-//       cdprintf("2lbn = %d\n", lbn);
     }
     lbn ++;
     buffer += 512;
-//     cdprintf("[%d]\n", __LINE__);
   }
-//   cdprintf("[%d]\n", __LINE__);
   return RES_OK;
-//   return disk_read (unit, buffer, lbn + partition_offset, count);
 }
 #else
 #define LPTS_HELLO            0x00
@@ -305,7 +292,6 @@ PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 #define LPTS_VERSION_MAJOR    0
 #define LPTS_VERSION_MINOR    1
 
-#define LPTBASE 0x378
 #undef outp
 #define outp outportb
 #undef inp
@@ -347,7 +333,7 @@ static void write_byte(BYTE b) {
   write_nybble(b & 0xf);
 }
 
-PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
+PUBLIC int LPTRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
   BYTE result;
   int i, j;
@@ -388,11 +374,9 @@ PUBLIC int SDRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 /* RETURNS: operation status as reported by the TU58     */
 /*                         */
 #ifdef FAKE_LPT
-PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
+PUBLIC int LPTWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
   int i, j;
-  
-//   cdprintf("SDWrite: in\n");
   
   for (i=0; i<count; i++) {
     int j;
@@ -406,17 +390,14 @@ PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
       fmemcpy(blocks[nrBlocks], buffer, 512);
       blockUnit[nrBlocks] = unit;
       blockNr[nrBlocks++] = lbn;
-//       cdprintf("SDWrite: Storing block %d (%d)\n", lbn, nrBlocks);
     }
     lbn ++;
     buffer += 512;
   }
-//   cdprintf("SDWrite: out\n");
   return RES_OK;
-//   return disk_write (unit, buffer, lbn + partition_offset, count);
 }
 #else
-PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
+PUBLIC int LPTWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
   BYTE result;
   int i, j;
@@ -445,7 +426,7 @@ PUBLIC int SDWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 #endif
 
 #ifdef FAKE_LPT
-PUBLIC void SDInit(void) {
+PUBLIC void LPTInit(void) {
 }
 #else
 #include <bios.h>
@@ -466,14 +447,17 @@ unsigned long get_ticks() {
   return timebase + ticks;
 }
 
-PUBLIC void SDInit(void) {
+PUBLIC void LPTInit(void) {
   extern volatile unsigned long timer_ticks;
   unsigned long time_now;
+  
+  LPTBASE = portbases[portbase];
+  
 
-  cdprintf("SDInit: initializing parallel port\n");
+  cdprintf("Info: initializing parallel port\n");
   outp(LPTBASE, 0x00);
   time_now = get_ticks();
   while (get_ticks() < (time_now + 36));
-  cdprintf("SDInit: done\n");
+  cdprintf("Info: done\n");
 }
 #endif

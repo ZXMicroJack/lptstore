@@ -20,8 +20,7 @@
 #include <stdio.h>      /* NULL, etc...            */
 #include <dos.h>        /* used only for MK_FP !      */
 #include "standard.h"   /* definitions for this project     */
-#include "sd.h"         /* SD card glue */
-#include "diskio.h"     /* SD card library header */
+#include "lptstore.h"   /* LPT port glue */
 #include "driver.h"     /* MSDOS device driver interface */
 #include "cprint.h"     /* Console printing */
 
@@ -32,7 +31,7 @@
 /* Forward declarations for routines that need it... */
 PRIVATE BOOLEAN parse_options (char far *);
 PUBLIC void Initialize (rh_init_t far *);
-PUBLIC void far SDDriver (rh_t far *);
+PUBLIC void far LPTDriver (rh_t far *);
 
 #define NR_DRIVES 16
 
@@ -46,7 +45,7 @@ extern bpbtbl_t bpbtbl;    /* BPB table (one for each drive unit) */
 /* driver action.  The second word of the far pointer contains the seg- */
 /* ment address, which is actually computed and written by the assembly */
 /* code.                      */
-PUBLIC WORD c_driver[2] = {(WORD) &SDDriver, 0};
+PUBLIC WORD c_driver[2] = {(WORD) &LPTDriver, 0};
 
 extern unsigned char com_flag;
 
@@ -58,7 +57,6 @@ extern DWORD partitionoffset;
 
 WORD  TimerVector[2];  /* previous INT 08H vector contents */
 
-extern BYTE  sd_card_check;
 extern BYTE  portbase;
 
 BYTE partition_number;
@@ -111,8 +109,8 @@ void fmemset (void far *dst, BYTE c, WORD n)
 /* response.  This works well enough...               */
 PUBLIC void MediaCheck (rh_media_check_t far *rh)
 {
-  if (Debug) cdprintf("SD: media check: unit=%d\n", rh->rh.unit);
-  rh->media_status = SDMediaCheck(rh->rh.unit) ? -1 : 0;
+  if (Debug) cdprintf("lptstore:  media check: unit=%d\n", rh->rh.unit);
+  rh->media_status = LPTMediaCheck(rh->rh.unit) ? -1 : 0;
   rh->rh.status = DONE;
 }
 
@@ -125,7 +123,7 @@ PUBLIC void MediaCheck (rh_media_check_t far *rh)
 PUBLIC void BuildBPB (rh_get_bpb_t far *rh)
 {
   if (Debug)
-    cdprintf("SD: build BPB: unit=%d\n", rh->rh.unit);
+    cdprintf("lptstore:  build BPB: unit=%d\n", rh->rh.unit);
   rh->bpb = &bpb[rh->rh.unit];
   rh->rh.status = DONE;
 }
@@ -167,7 +165,7 @@ int dos_error (int status)
     case RES_PARERR: return CRC_ERROR;
 
     default:
-    cdprintf("SD: unknown drive error - status = 0x%2x\n", status);
+    cdprintf("lptstore:  unknown drive error - status = 0x%2x\n", status);
         return GENERAL_FAILURE;
   }
 }
@@ -182,13 +180,13 @@ int dos_error (int status)
 BOOLEAN drive_init (rh_t far *rh)
 {
   if (!InitNeeded[rh->unit])  return TRUE;
-  if (!SDInitialize(rh->unit, partition_number, &bpb[rh->unit])) {
-    if (Debug)  cdprintf("SD: drive failed to initialize\n");
+  if (!LPTInitialize(rh->unit, partition_number, &bpb[rh->unit])) {
+    if (Debug)  cdprintf("lptstore:  drive failed to initialize\n");
     rh->status = DONE | ERROR | GENERAL_FAILURE;
     return FALSE;
   }
   InitNeeded[rh->unit] = FALSE;
-  if (Debug) cdprintf("SD: drive initialized\n");
+  if (Debug) cdprintf("lptstore:  drive initialized\n");
   return TRUE;
 }
 
@@ -196,41 +194,21 @@ BOOLEAN drive_init (rh_t far *rh)
 /* Read Data */
 PUBLIC void ReadBlock (rh_io_t far *rh)
 {
-//   WORD lbn, count;
   int status;
-//   BYTE far *dta;
-//   WORD sendct;
-  if (Debug)
-    cdprintf("SD: read block: unit=%d, start=%d, count=%d, dta=%4x:%4x\n",
+  if (Debug) {
+    cdprintf("lptstore:  read block: unit=%d, start=%d, count=%d, dta=%4x:%4x\n",
       rh->rh.unit, rh->start, rh->count, FP_SEG(rh->dta), FP_OFF(rh->dta));
+  }
+    
   if (!drive_init ((rh_t far *) rh))  return;
-//   count = rh->count,  lbn = rh->start,  dta = rh->dta;
 
-    status = SDRead(rh->rh.unit, rh->start, rh->dta, rh->count);
-    if (status != RES_OK)  {
-      if (Debug) cdprintf("SD: read error - status=%d\n", status);
-//       fmemset(dta, 0, BLOCKSIZE);
-      rh->rh.status = DONE | ERROR | dos_error(status);
-      return;
-    }
+  status = LPTRead(rh->rh.unit, rh->start, rh->dta, rh->count);
+  if (status != RES_OK)  {
+    if (Debug) cdprintf("lptstore:  read error - status=%d\n", status);
+    rh->rh.status = DONE | ERROR | dos_error(status);
+    return;
+  }
 
-//   while (count > 0) {
-//     sendct = (count > 16) ? 16 : count;
-//     cdprintf("SD1: in loop count %d sendct %d\n", count, sendct);
-//     status = SDRead(rh->rh.unit, lbn, dta, sendct);
-//     cdprintf("SD2: in loop count %d sendct %d\n", count, sendct);
-//     if (sendct < 1 || status != RES_OK)  {
-//       if (Debug) cdprintf("SD: read error - status=%d\n", status);
-//       fmemset(dta, 0, BLOCKSIZE);
-//       rh->rh.status = DONE | ERROR | dos_error(status);
-//       return;
-//     }
-//     lbn += sendct;
-//     count -= sendct;
-//     dta += (sendct*BLOCKSIZE);
-//     cdprintf("SD: in loop count %d sendct %d\n", count, sendct);
-//   }
-//   cdprintf("SD: done\n");
   rh->rh.status = DONE;
 }
 
@@ -239,35 +217,19 @@ PUBLIC void ReadBlock (rh_io_t far *rh)
 /* Write Data with Verification */
 PUBLIC void WriteBlock (rh_io_t far *rh, BOOLEAN verify)
 {
-//   WORD lbn, count;
   int status;
-//   BYTE far *dta;
-//   WORD sendct;
-  if (Debug)
-    cdprintf("SD: write block: unit=%d, start=%d, count=%d, dta=%4x:%4x\n",
+  if (Debug) {
+    cdprintf("lptstore:  write block: unit=%d, start=%d, count=%d, dta=%4x:%4x\n",
       rh->rh.unit, rh->start, rh->count, FP_SEG(rh->dta), FP_OFF(rh->dta));
+  }
+  
   if (!drive_init ((rh_t far *) rh))  return;
-//   count = rh->count,  lbn = rh->start,  dta = rh->dta;
-//   while (count > 0) {
-//     sendct = (count > 16) ? 16 : count;
-//     cdprintf("SD: sendct %d count %d\n", sendct, count);
-//     status = SDWrite(rh->rh.unit, lbn, dta, sendct);
-//     if (status != RES_OK)  {
-//       if (Debug) cdprintf("SD: write error - status=%d\n", status);
-//       rh->rh.status = DONE | ERROR | dos_error(status);
-//       return;
-//     }
-//     lbn += sendct;
-//     count -= sendct;
-//     dta += (sendct*BLOCKSIZE);
-//   }
-  status = SDWrite(rh->rh.unit, rh->start, rh->dta, rh->count);
+  status = LPTWrite(rh->rh.unit, rh->start, rh->dta, rh->count);
   if (status != RES_OK)  {
-    if (Debug) cdprintf("SD: write error - status=%d\n", status);
+    if (Debug) cdprintf("lptstore:  write error - status=%d\n", status);
     rh->rh.status = DONE | ERROR | dos_error(status);
     return;
   }
-//   cdprintf("SD: write block done\n");
   rh->rh.status = DONE;
 }
 
@@ -281,7 +243,7 @@ PUBLIC void WriteBlock (rh_io_t far *rh, BOOLEAN verify)
 PUBLIC void GenericIOCTL (rh_generic_ioctl_t far *rh)
 {
   if (Debug)
-    cdprintf("SD: generic IOCTL: unit=%d, major=0x%2x, minor=0x%2x, data=%4x:%4x\n",
+    cdprintf("lptstore:  generic IOCTL: unit=%d, major=0x%2x, minor=0x%2x, data=%4x:%4x\n",
     rh->rh.unit, rh->major, rh->minor, FP_SEG(rh->packet), FP_OFF(rh->packet));
 
   if (rh->major == DISK_DEVICE)
@@ -301,7 +263,7 @@ PUBLIC void GenericIOCTL (rh_generic_ioctl_t far *rh)
       case GET_MEDIA_ID:
       default: ;
     }
-  cdprintf("SD: unimplemented IOCTL - unit=%d, major=0x%2x, minor=0x%2x\n",
+  cdprintf("lptstore:  unimplemented IOCTL - unit=%d, major=0x%2x, minor=0x%2x\n",
      rh->rh.unit, rh->major, rh->minor);
   rh->rh.status = DONE | ERROR | UNKNOWN_COMMAND;
 }
@@ -315,7 +277,7 @@ PUBLIC void GenericIOCTL (rh_generic_ioctl_t far *rh)
 PUBLIC void IOCTLQuery (rh_generic_ioctl_t far *rh)
 {
   if (Debug)
-    cdprintf("SD: generic IOCTL query: unit=%d, major=0x%2x, minor=0x%2x\n",
+    cdprintf("lptstore:  generic IOCTL query: unit=%d, major=0x%2x, minor=0x%2x\n",
     rh->rh.unit, rh->major, rh->minor);
   if (rh->major == DISK_DEVICE)
     switch (rh->minor) {
@@ -333,13 +295,13 @@ PUBLIC void IOCTLQuery (rh_generic_ioctl_t far *rh)
 }
 
 
-/* SDDriver */
+/* LPTDriver */
 /*   This procedure is called by the DRIVER.ASM interface module when   */
 /* MSDOS calls the driver INTERRUPT routine, and the C code is expected */
 /* to define it.  Note that the STRATEGY call is handled completely  */
 /* inside DRIVER.ASM and the address of the request header block is  */
 /* passed to the C interrupt routine as a parameter.        */
-PUBLIC void far SDDriver (rh_t far *rh)
+PUBLIC void far LPTDriver (rh_t far *rh)
 {
 /*
   if (Debug)
@@ -370,7 +332,7 @@ PUBLIC void far SDDriver (rh_t far *rh)
 PUBLIC void Shutdown (void)
 {
   long i;
-  cdprintf("SD: Shutdown\n");
+  cdprintf("lptstore:  Shutdown\n");
   for (i=0; i <100000; ++i);
   /* SDClose(); */
   JMPVECTOR(RebootVector);
@@ -408,19 +370,16 @@ PUBLIC void Timer (void) {
 PUBLIC void Initialize (rh_init_t far *rh)
 {
   WORD brkadr, reboot[2];  int status, i;
-//   Debug=1;  
   force_init();
-//   for (i=1; i<NR_DRIVES; i++) {
-//     fmemcpy(&bpb[i], &bpb[0], sizeof bpb[0]);
-//   }
   
   /* The version number is sneakily stored in the device header! */
-  cdprintf("SD pport device driver V%c.%c (C) 1994 by Dan Marks\n     based on TU58 by Robert Armstrong\n",
+  cdprintf("LPTSTORE device driver V%c.%c (c)2023 Microjack\n"
+    "based on (C) 1994 by Dan Marks, in turn based on TU58 by Robert Armstrong\n",
     header.name[6], header.name[7]);
 
   /* Parse the options from the CONFIG.SYS file, if any... */
   if (!parse_options((char far *) rh->bpbtbl)) {
-    cdprintf("SD: bad options in CONFIG.SYS\n");
+    cdprintf("lptstore:  bad options in CONFIG.SYS\n");
     goto unload2;
   }
 
@@ -430,27 +389,20 @@ PUBLIC void Initialize (rh_init_t far *rh)
   /* the offset from DGROUP.  See HEADER.ASM for a memory layout. */
   brkadr = ((WORD) &Initialize) + ((_CS - _DS) << 4);
   rh->brkadr = MK_FP(_DS, brkadr);
-  if (Debug)
-    cdprintf("SD: CS=%4x, DS=%4x, SS=%4x, SP=%4x, break=%4x\n",
+  if (Debug) {
+    cdprintf("lptstore:  CS=%4x, DS=%4x, SS=%4x, SP=%4x, break=%4x\n",
      _CS, _DS, _SS, _SP, brkadr);
+  }
 
-  // register timer
-//   reboot[0] = ((WORD) &Timer) + ((_CS - _DS) << 4);
-//   reboot[1] = _CS;
-//   GETVECTOR(0x08, TimerVector);
-//   SETVECTOR(0x08, reboot);
-//   if (Debug)
-//     cdprintf("SD: timer vector = %4x:%4x, old vector = %4x, %4x\n",
-//     reboot[1], reboot[0], TimerVector[1], TimerVector[0]);
-  SDInit();
+  LPTInit();
     
 /* Try to make contact with the drive... */
-  if (Debug) cdprintf("SD: initializing drive\n");
-  if (!SDInitialize(rh->rh.unit, partition_number, &bpb[rh->rh.unit])) {
-    cdprintf("SD: drive not connected or not powered\n");
+  if (Debug) cdprintf("lptstore:  initializing drive\n");
+  if (!LPTInitialize(rh->rh.unit, partition_number, &bpb[rh->rh.unit])) {
+    cdprintf("lptstore:  drive not connected or not powered\n");
     goto unload1;
   }
-  cdprintf("SD: rh = %4x:%4x\n", FP_SEG(rh), FP_OFF(rh));
+  cdprintf("lptstore:  rh = %4x:%4x\n", FP_SEG(rh), FP_OFF(rh));
 
   
   // register reboot vector
@@ -459,7 +411,7 @@ PUBLIC void Initialize (rh_init_t far *rh)
   GETVECTOR(0x19, RebootVector);
   SETVECTOR(0x19, reboot);
   if (Debug)
-    cdprintf("SD: reboot vector = %4x:%4x, old vector = %4x, %4x\n",
+    cdprintf("lptstore:  reboot vector = %4x:%4x, old vector = %4x, %4x\n",
     reboot[1], reboot[0], RebootVector[1], RebootVector[0]);
 
   /* All is well.  Tell DOS how many units and the BPBs... */
@@ -468,25 +420,6 @@ PUBLIC void Initialize (rh_init_t far *rh)
   rh->bpbtbl = &bpbtbl;
   rh->rh.status = DONE;
 
-#if 0
-  if (Debug)
-  {   
-      cdprintf("SD: BPB data:\n");
-      cdprintf("Sector Size: %d   ", bpb.sector_size);
-      cdprintf("Allocation unit: %d\n", bpb.allocation_unit);
-      cdprintf("Reserved sectors: %d  ", bpb.reserved_sectors);
-      cdprintf("Fat Count: %d\n", bpb.fat_count);
-      cdprintf("Directory size: %d  ", bpb.directory_size);
-      cdprintf("Total sectors: %d\n", bpb.total_sectors);
-      cdprintf("Media descriptor: %x  ", bpb.media_descriptor);
-      cdprintf("Fat sectors: %d\n", bpb.fat_sectors);
-      cdprintf("Track size: %d  ", bpb.track_size);
-      cdprintf("Head count: %d\n", bpb.head_count);
-      cdprintf("Hidden sectors: %d  ", bpb.hidden_sectors);
-      cdprintf("Sector Ct 32 hex: %L\n", bpb.sector_count);
-      cdprintf("Partition offset: %L\n", partition_offset);
-   }
-#endif
 return;
 
   /*   We get here if there are any errors in initialization.  In that  */
@@ -494,7 +427,6 @@ return;
   /* (1) the break address to the starting address, (2) the number of   */
   /* units to 0, and (3) the error flag.           */
 unload1:
-//   SETVECTOR(0x08, TimerVector); // restore timer interrupt
   {}
 unload2:
   rh->brkadr = MK_FP(_DS, 0);  rh->nunits = 0;  rh->rh.status = ERROR;
@@ -542,23 +474,13 @@ PRIVATE BOOLEAN parse_options (char far *p)
     switch (*p++) {
       case 'd', 'D':
         Debug = TRUE;
-   break;
-      case 'k', 'K':
-        sd_card_check = 1;
-   break;
-      case 'p', 'P':
-        if ((p=option_value(p,&temp)) == NULL)  return FALSE;
-        if ((temp < 1) || (temp > 4))
-            cdprintf("SD: Invalid partition number %x\n",temp);
-        else
-            partition_number = temp;
-   break; 
+        break;
       case 'b', 'B':
         if ((p=option_value(p,&temp)) == NULL)  return FALSE;
         if ((temp < 1) || (temp > 5))
-            cdprintf("SD: Invalid port base index %x\n",temp);
+          cdprintf("lptstore:  Invalid port base index %x\n",temp);
         else
-            portbase = temp;
+          portbase = temp - 1;
    break; 
       default:
         return FALSE;

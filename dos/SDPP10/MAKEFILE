@@ -9,19 +9,18 @@ ASM=tasm -mx
 .asm.obj:
    $(ASM) $*
 
-sd.sys:   header.obj cprint.obj sd.obj sdmm.obj driver.obj
-   tlink -t -m -s -n header cprint sd sdmm driver, sd.sys
+lptstore.sys:   header.obj cprint.obj lptstore.obj driver.obj
+   tlink -t -m -s -n header cprint lptstore driver, lptstore.sys
 
-sd.com:   header.obj cprint.obj sd.obj sdmm.obj driver.obj
-   tlink -t -m -s -n header cprint sd sdmm driver, sd.sys
-   rename sd.sys sd.com
+lptstore.com:   header.obj cprint.obj sd.obj driver.obj
+   tlink -t -m -s -n header cprint lptstore driver, lptstore.sys
+   rename lptstore.sys lptstore.com
 
 clean:
    del *.obj
-   del sd.sys
+   del lptstore.sys
    del *.map
 
-driver.obj: cprint.c sdmm.c driver.c cprint.c cprint.h standard.h driver.h sd.h
-sd.obj:   sd.c sd.h standard.h driver.h
-sdmm.obj:   sdmm.c diskio.h integer.h
+driver.obj: cprint.c driver.c cprint.c cprint.h standard.h driver.h lptstore.h
+lptstore.obj:   lptstore.c lptstore.h standard.h driver.h
 header.obj: header.asm
