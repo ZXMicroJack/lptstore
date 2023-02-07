@@ -301,15 +301,17 @@ static void init_lpt() {
   outp(LPTBASE,0x00);
 }
 
-static void write_nybble(BYTE x) {
+#if 0
+void write_nybble(BYTE x) {
   /* set upper nybble and raise signal bit to 1 wait for 1 */
   outp(LPTBASE, 0x10 | (x & 0xf));
   while ((inp(LPTBASE+1) & 0x80) == 0);
   outp(LPTBASE, inp(LPTBASE) & 0xf);
   while ((inp(LPTBASE+1) & 0x80) != 0);
 }
+#endif
 
-static BYTE read_nybble() {
+BYTE read_nybble() {
   BYTE r;
   /* set upper nybble and raise signal bit to 1 wait for 1 */
   while ((inp(LPTBASE+1) & 0x80) == 0);
@@ -321,16 +323,148 @@ static BYTE read_nybble() {
   return r;
 }
 
-static BYTE read_byte() {
+BYTE read_byte() {
+  BYTE r;
+  
+  _DX = LPTBASE;
+  
+  asm {
+    INC DX;
+  }
+  loop1:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JZ loop1;
+    IN AL,DX;
+    SHL AL,1;
+    AND AL,0xf0;
+    MOV AH,AL;
+    
+    DEC DX;
+    MOV AL,0x10;
+    OUT DX,AL;
+    INC DX;
+  };
+  loop2:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JNZ loop2;
+    DEC DX;
+    MOV AL,0x00;
+    OUT DX,AL;
+  }
+  asm {
+    INC DX;
+  }
+  loop3:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JZ loop3;
+    IN AL,DX;
+    SHR AL,1;
+    SHR AL,1;
+    SHR AL,1;
+    AND AL,0x0f;
+    OR AH,AL;
+    
+    DEC DX;
+    MOV AL,0x10;
+    OUT DX,AL;
+    INC DX;
+  };
+  loop4:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JNZ loop4;
+    DEC DX;
+    MOV AL,0x00;
+    OUT DX,AL;
+  }
+  return _AH;
+#if 0
+  /* set upper nybble and raise signal bit to 1 wait for 1 */
+  while ((inp(LPTBASE+1) & 0x80) == 0);
+  r = (inp(LPTBASE+1) >> 3) & 0xf;
+  outp(LPTBASE, inp(LPTBASE) | 0x10);
+
+  while ((inp(LPTBASE+1) & 0x80) != 0);
+  outp(LPTBASE, inp(LPTBASE) & 0x0f);
+  return r;
+#endif
+}
+
+#if 0
+BYTE read_byte() {
   BYTE r;
   r = read_nybble() << 4;
   r |= read_nybble();
   return r;
 }
+#endif
 
 static void write_byte(BYTE b) {
-  write_nybble(b >> 4);
-  write_nybble(b & 0xf);
+  _DX = LPTBASE;
+  _AL = b;
+  asm {
+    PUSH AX;
+    SHR AL,1;
+    SHR AL,1;
+    SHR AL,1;
+    SHR AL,1;
+    OR AL,0x10;
+    OUT DX, AL;
+    INC DX;
+  }
+  loop1:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JZ loop1;
+    
+    AND AL,0x0f;
+    DEC DX;
+    OUT DX, AL;
+
+    INC DX;
+  }
+  loop2:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JNZ loop2;
+  }
+  asm {
+    POP AX;
+    AND AL,0x0f;
+    OR AL,0x10;
+    DEC DX;
+    OUT DX, AL;
+    INC DX;
+  }
+  loop3:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JZ loop3;
+    
+    AND AL,0x0f;
+    DEC DX;
+    OUT DX, AL;
+
+    INC DX;
+  }
+  loop4:
+  asm {
+    IN AL,DX;
+    TEST AL,0x80;
+    JNZ loop4;
+  }
+//   write_nybble(b >> 4);
+//   write_nybble(b & 0xf);
 }
 
 PUBLIC int LPTRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
