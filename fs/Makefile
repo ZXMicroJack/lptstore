@@ -12,5 +12,8 @@ testfat32.o: testfat32.c fat32.h
 testfat32: fat32.o testfat32.o
 	g++ -g -o $@ $^
 
+testcomp: comp.c
+	g++ -g -o $@ $^
+
 clean:
 		rm  testfat32  *.o

@@ -301,6 +301,54 @@ static void init_lpt() {
   outp(LPTBASE,0x00);
 }
 
+BYTE compress_buff[1024];
+
+int LPTCompress(BYTE *out, BYTE far *data) {
+  int c = 0, i, r = 0;
+  for (i=0; i<512; i++) {
+    if (data[i] == 0x00) {
+      if (c == 0) {
+        out[r++] = 0x00;
+        c++;
+      } else if (c == 255) {
+        out[r++] = 0xff;
+        c = 0;
+      } else {
+        c++;
+      }
+    } else {
+      if (c) {
+        out[r++] = c-1;
+        c = 0;
+      }
+      out[r++] = data[i];
+    }
+
+    if (r >= 512) {
+      return 0;
+    }
+  }
+  if (c) {
+    out[r++] = c-1;
+  }
+  return r >= 512 ? 0 : r;
+}
+
+int LPTDecompress(BYTE far *out, BYTE *data, int len) {
+  int c = 0, i, r = 0;
+  for (i=0; i<len; i++) {
+    if (i > 0 && data[i-1] == 0x00 && !(i > 1 && data[i-2] == 0x00) ) {
+      c = data[i] + 1;
+      if ((r + c) > 512) return 0;
+      while (c--)
+        out[r++] = 0x00;
+    } else if (data[i] != 0x00) {
+      out[r++] = data[i];
+    }
+  }
+  return r;
+}
+
 #if 0
 void write_nybble(BYTE x) {
   /* set upper nybble and raise signal bit to 1 wait for 1 */
@@ -309,7 +357,6 @@ void write_nybble(BYTE x) {
   outp(LPTBASE, inp(LPTBASE) & 0xf);
   while ((inp(LPTBASE+1) & 0x80) != 0);
 }
-#endif
 
 BYTE read_nybble() {
   BYTE r;
@@ -322,6 +369,7 @@ BYTE read_nybble() {
   outp(LPTBASE, inp(LPTBASE) & 0x0f);
   return r;
 }
+#endif
 
 BYTE read_byte() {
   BYTE r;
@@ -481,10 +529,19 @@ PUBLIC int LPTRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
     write_byte(lbn >> 8);
     write_byte(lbn & 0xff);
     result = read_byte();
-    if (!result) {
+    if (result == 0x00) {
       for (i=0; i<512; i++) {
         *buffer++ = read_byte();
       }
+    } else if (result == 0x02) {
+      int c;
+      c = read_byte() << 8;
+      c |= read_byte();
+      for (i=0; i<c; i++) {
+        compress_buff[i] = read_byte();
+      }
+      LPTDecompress(buffer, compress_buff, c);
+      buffer += 512;
     } else {
       ret = RES_ERROR;
       break;
@@ -531,22 +588,36 @@ PUBLIC int LPTWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
   return RES_OK;
 }
 #else
+
 PUBLIC int LPTWrite (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
 {
   BYTE result;
-  int i, j;
+  int i, j, c;
   int ret = RES_OK; /* optimist */
   
   for (j=0; j<count; j++) {
     write_byte(LPTS_WRITE_BLOCK);
     write_byte(unit);
-    write_byte(0x00);
-    write_byte(0x00);
-    write_byte(lbn >> 8);
-    write_byte(lbn & 0xff);
-    for (i=0; i<512; i++) {
-      write_byte(*buffer++);
+    if (c = LPTCompress(compress_buff, buffer)) {
+      write_byte(c >> 8);
+      write_byte(c & 0xff);
+      write_byte(lbn >> 8);
+      write_byte(lbn & 0xff);
+      
+      for (i=0; i<c; i++) {
+        write_byte(compress_buff[i]);
+      }
+      buffer += 512;
+    } else {
+      write_byte(0x00);
+      write_byte(0x00);
+      write_byte(lbn >> 8);
+      write_byte(lbn & 0xff);
+      for (i=0; i<512; i++) {
+        write_byte(*buffer++);
+      }
     }
+    
     result = read_byte();
     if (result) {
       ret = RES_ERROR;
