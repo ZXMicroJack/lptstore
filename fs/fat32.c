@@ -5,6 +5,8 @@
 
 #include "fat32.h"
 
+// #define DEBUG
+
 // #define debug(a) printf a
 
 #ifndef debug
@@ -33,12 +35,15 @@ void dump_fat32(fat32_t *pfat32) {
   printf("sectorsPerFAT %u\n", pfat32->sectorsPerFAT);
   printf("rootDirectoryFirstCluster %u\n", pfat32->rootDirectoryFirstCluster);
 
+#if 0
   for (int i=0; i < pfat32->nrFiles; i++) {
     printf("dirent:%s lfn:%s attr:%02X cll:%04X clh:%04X size:%08X\n",
       pfat32->file[i].name, pfat32->file[i].lfn,
       pfat32->file[i].attr, pfat32->file[i].startClusterLo,
       pfat32->file[i].startClusterHi, pfat32->file[i].fileSize);
   }
+#endif
+  
 }
 #endif
 
@@ -75,7 +80,7 @@ static uint32_t cfg_cluster = 0;
 static int get_lba(fat32_t *pfat32, uint32_t cluster) {
   debug(("get_lba: cluster=%08X\n", cluster));
   return pfat32->reservedSectorCount + pfat32->sectorsPerFAT * 2 +
-    pfat32->sectorsPerCluster * cluster - 2;
+    pfat32->sectorsPerCluster * (cluster - 2);
 }
 
 
@@ -97,7 +102,7 @@ static void process_dir_sector(fat32_t *pfat32, uint8_t *buff) {
       
       if (!memcmp(&buff[i], "DISK", 4) && !memcmp(&buff[i+5], "   DAT", 6) && (buff[i+11] & 0x20) == 0x20) {
         int n = buff[i+4] - 'A';
-        disk_lba[n] = get_lba(pfat32, (cluster_hi << 16) | cluster_lo);
+        disk_lba[n] = get_lba(pfat32, (cluster_hi << 16) | cluster_lo); 
         disk_blocks[n] = file_size >> 9;
         disk_cluster[n] = (cluster_hi << 16) | cluster_lo;
         printf("Disk %c found lba %08X blocks %08X\n", 'A' + n, disk_lba[n], disk_blocks[n]);
@@ -121,6 +126,7 @@ static int read_fs_id(fat32_t *pfat32) {
     pfat32->reservedSectorCount = buff[0x0e] | (buff[0x0f]<<8);
     pfat32->sectorsPerFAT = buff[0x24] | (buff[0x25]<<8) | (buff[0x26]<<16) | (buff[0x27]<<24);
     pfat32->rootDirectoryFirstCluster = buff[0x2c] | (buff[0x2d]<<8) | (buff[0x2e]<<16) | (buff[0x2f]<<24);
+    printf("nr copies of fat %d\n", buff[0x10]);
     return 0;
   }
   return 1;
@@ -153,6 +159,7 @@ void read_file(fat32_t *pfat32, uint32_t cluster, void (*callback)(fat32_t *, ui
     for (int i=0; i<pfat32->sectorsPerCluster; i++) {
       debug(("read lba %08X\n", lba+i));
       read_sector(lba+i, buff);
+//       dump_sector(buff);
       callback(pfat32, buff);
     }
     cluster = get_next_cluster(pfat32, cluster);

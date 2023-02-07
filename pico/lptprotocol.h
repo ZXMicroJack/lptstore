@@ -10,6 +10,7 @@
 #define LPTS_VERSION_MAJOR    0
 #define LPTS_VERSION_MINOR    1
 
+void lptprotocol_task();
 
 #endif
 

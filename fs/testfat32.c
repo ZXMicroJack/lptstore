@@ -7,7 +7,9 @@
 
 #define passif(a) { int r = (a); if (r) { printf("[%d]%s " #a "\n", __LINE__, r ? "PASSED" : "FAILED" ); } }
 
-#define CARDFILE    "card"
+// #define CARDFILE    "card"
+
+#define CARDFILE    "/dev/sdb"
 
 int read_sector(int sector, uint8_t *buff) {
   FILE *f = fopen(CARDFILE, "rb");
@@ -18,10 +20,12 @@ int read_sector(int sector, uint8_t *buff) {
 }
 
 int write_sector(int sector, uint8_t *buff) {
+#if 0
   FILE *f = fopen(CARDFILE, "wb+");
   fseek(f, sector*512, SEEK_SET);
   fwrite(buff, 1, 512, f);
   fclose(f);
+#endif
   return 0;
 }
 

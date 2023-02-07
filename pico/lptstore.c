@@ -6,15 +6,20 @@
 
 #include "hardware/clocks.h"
 #include "hardware/structs/clocks.h"
-#include "hardware/flash.h"
+// #include "hardware/flash.h"
 
 #include "pico/bootrom.h"
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
 #include "pico/bootrom.h"
+#include "pico/multicore.h"
 
 #include "lptcomms.h"
 #include "disk.h"
+#include "lptprotocol.h"
+
+#include "bsp/board.h"
+#include "tusb.h"
 
 #ifdef DEBUG
 #define debug(a) printf a
@@ -29,51 +34,19 @@
 #endif
 
 
-int main()
-{
-  stdio_init_all();
-  sleep_ms(1000); // usb settle delay
-  
-// #if PICO_NO_FLASH
-//   enable_xip();
-// #endif
-  
-//   uart_init (uart1, 31250);
-//   uart_set_fifo_enabled(uart1, true);
-//   gpio_set_function(4, GPIO_FUNC_UART);
-//   gpio_set_function(5, GPIO_FUNC_UART);
 
-  // set up error led
-//   gpio_init(PICO_DEFAULT_LED_PIN);
-//   gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-  
+void lptcomms_core() {
   lptcomms_init();
   disk_init();
 
-//   gpio_init(PICO_DEFAULT_LED_PIN);
-//   
-//   uint64_t started;
-  
-//   muteAudio = 1;
-//   multicore_reset_core1();
-//   multicore_launch_core1(audio_core);
-
-//   }
   int w = 0;
   uint8_t b = 0x01;
   
   for(;;) {
+#if 0
     int c = getchar_timeout_us(0);
-    if (c == 'h') printf("(h)elp (q)uit (r)eadgpios (w)read (e)mitbyte (d)readgpios (f)writegpios\n");
+    if (c == 'h') printf("(h)elp (q)uit (w)read (e)mitbyte (d)readgpios (f)writegpios\n");
     if (c == 'q') break;
-    if (c == 'r') {
-      uint32_t dw = gpio_get_all() >> 20;
-      uint8_t b = (dw >> 8) | ((dw&0x80) >> 6) | ((dw&0x40) >> 4) | ((dw&0x04) << 1) | ((dw&0x02) << 3);
-
-      printf("gpios: %08x (%02x)\n", (gpio_get_all() >> 20), b);
-      
-    }
-    
     if (c == 'w') {
       printf("Reading: %02X\n", lptcomms_readbyte());
     }
@@ -107,9 +80,103 @@ int main()
       }
       printf("Leaving protocol mode.\n");
     }
+#endif  
+    lptprotocol_task();
+    msc_task();
+  }
+}
+
+uint8_t sector[512];
+uint8_t sector2[512];
+
+// extern int read_sector(int pdrv, uint8_t *buff, uint32_t sector);
+// extern int write_sector(int pdrv, uint8_t *buff, uint32_t sector);
+// 
+// int read_sector(int sector, uint8_t *buff);
+// int write_sector(int sector, uint8_t *buff);
+
+extern void msc_task();
+
+int main()
+{
+  stdio_init_all();
+  uart_init (uart0, 115200);
+  gpio_set_function(0, GPIO_FUNC_UART);
+  gpio_set_function(1, GPIO_FUNC_UART);
+
+  board_init();
+  tusb_init();
+  
+//   sleep_ms(1000); // usb settle delay
+  printf("Starting up\n");
+  
+  multicore_reset_core1();
+  multicore_launch_core1(lptcomms_core);
+
+  
+// int disk_write_sector(uint8_t disk, int lbn, uint8_t *buff);
+// int disk_read_sector(uint8_t disk, int lbn, uint8_t *buff);
+// uint32_t disk_get_blocks(uint8_t disk);
+// uint32_t disk_get_drives(void);
+// int disk_init(void);
+  
+  printf("Starting up 222\n");
+  
+  while (1)
+  {
+    // tinyusb host task
+    tuh_task();
+//     led_blinking_task();
+    
+#if 0
+    switch(getchar_timeout_us(0)) {
+      case 'r': {
+        printf("read: returns %d\r\n", disk_read_sector(0, 0, sector));
+        break;
+      }
+      case 'R': {
+        printf("read2: returns %d\r\n", disk_read_sector(0, 0, sector2));
+        break;
+      }
+      case 'w': {
+        printf("write: returns %d\r\n", disk_write_sector(0, 0, sector));
+        break;
+      }
+      case 'W': {
+        printf("write2: returns %d\r\n", disk_write_sector(0, 0, sector2));
+        break;
+      }
+      case 'd': {
+        int i;
+        for (i=0; i<512; i++) {
+          if ((i&15) == 0) printf("\r\n");
+          printf("%02X ", sector[i]);
+        }
+        break;
+      }
+      case 'D': {
+        int i;
+        for (i=0; i<512; i++) {
+          if ((i&15) == 0) printf("\r\n");
+          printf("%02X ", sector2[i]);
+        }
+        break;
+      }
+      case 'b': {
+        memset(sector, 0, sizeof sector);
+        printf("cleared\n");
+        break;
+      }
+      case 'B': {
+        memset(sector2, 0, sizeof sector2);
+        printf("cleared2\n");
+        break;
+      }
+    }
+#endif
+
   }
   
-// 	wtsynth_Kill();
   reset_usb_boot(0, 0);
 	return 0;
 }
