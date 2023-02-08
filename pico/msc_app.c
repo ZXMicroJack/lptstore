@@ -33,21 +33,20 @@
 //--------------------------------------------------------------------+
 static scsi_inquiry_resp_t inquiry_resp;
 
-static volatile int complete = 0;
+static volatile int complete = 1;
 static volatile int result = 0;
 static int usb_disk_inserted = 0;
 static int usb_disk_insert_event = 0;
+static int prefetching_lba = -1;
+static int prefetching_buff[512];
+static volatile int prefetching_complete = 1;
 
 bool msc_fat_complete_cb(uint8_t dev_addr, tuh_msc_complete_data_t const *d)
 {
     (void)dev_addr;
-    // success = csw->status == MSC_CSW_STATUS_PASSED;
-//     printf("msc_fat_complete_cb: status = %d\n", d->csw->status == MSC_CSW_STATUS_PASSED);
-//     printf("msc_fat_complete_cb: csw->status = %d\n", d->csw->status);
-    
     complete = 1;
+    prefetching_complete = 1;
     result = d->csw->status == MSC_CSW_STATUS_PASSED ? 0 : 1;
-    
     return d->csw->status == MSC_CSW_STATUS_PASSED;
 }
 
@@ -55,14 +54,29 @@ bool msc_fat_complete_cb(uint8_t dev_addr, tuh_msc_complete_data_t const *d)
 #define disk 0
 int read_sector(int sector, uint8_t *buff) {
   if (!usb_disk_inserted) return 1;
-  complete = 0;
-//   printf("read sector %d\n", sector);
-  if (!tuh_msc_read10(disk+1, 0, buff, sector, /*count*/1, msc_fat_complete_cb, (uintptr_t)NULL)) {
-    return 1;
+
+  // wait for prefetch to complete
+  while (!prefetching_complete)
+    tight_loop_contents();
+  
+  if (prefetching_lba == sector && !result) {
+    memcpy(buff, prefetching_buff, 512);
+  } else {
+    complete = 0;
+
+    if (!tuh_msc_read10(disk+1, 0, buff, sector, /*count*/1, msc_fat_complete_cb, (uintptr_t)NULL)) {
+      return 1;
+    }
+    
+    while (!complete)
+      tight_loop_contents();
   }
   
-  while (!complete)
-    tight_loop_contents();
+  prefetching_lba = sector + 1;
+  prefetching_complete = 0;
+  if (!tuh_msc_read10(disk+1, 0, prefetching_buff, prefetching_lba, /*count*/1, msc_fat_complete_cb, (uintptr_t)NULL)) {
+    return 1;
+  }
   return result;
 }
 

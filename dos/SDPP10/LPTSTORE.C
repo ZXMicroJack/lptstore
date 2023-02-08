@@ -349,28 +349,6 @@ int LPTDecompress(BYTE far *out, BYTE *data, int len) {
   return r;
 }
 
-#if 0
-void write_nybble(BYTE x) {
-  /* set upper nybble and raise signal bit to 1 wait for 1 */
-  outp(LPTBASE, 0x10 | (x & 0xf));
-  while ((inp(LPTBASE+1) & 0x80) == 0);
-  outp(LPTBASE, inp(LPTBASE) & 0xf);
-  while ((inp(LPTBASE+1) & 0x80) != 0);
-}
-
-BYTE read_nybble() {
-  BYTE r;
-  /* set upper nybble and raise signal bit to 1 wait for 1 */
-  while ((inp(LPTBASE+1) & 0x80) == 0);
-  r = (inp(LPTBASE+1) >> 3) & 0xf;
-  outp(LPTBASE, inp(LPTBASE) | 0x10);
-
-  while ((inp(LPTBASE+1) & 0x80) != 0);
-  outp(LPTBASE, inp(LPTBASE) & 0x0f);
-  return r;
-}
-#endif
-
 BYTE read_byte() {
   BYTE r;
   
@@ -395,6 +373,7 @@ BYTE read_byte() {
     OUT DX,AL;
     INC DX;
   };
+  // nybble 2
   loop2:
   asm {
     IN AL,DX; // wait for target to go low
@@ -411,26 +390,7 @@ BYTE read_byte() {
     OUT DX,AL;
   }
   return _AH;
-#if 0
-  /* set upper nybble and raise signal bit to 1 wait for 1 */
-  while ((inp(LPTBASE+1) & 0x80) == 0);
-  r = (inp(LPTBASE+1) >> 3) & 0xf;
-  outp(LPTBASE, inp(LPTBASE) | 0x10);
-
-  while ((inp(LPTBASE+1) & 0x80) != 0);
-  outp(LPTBASE, inp(LPTBASE) & 0x0f);
-  return r;
-#endif
 }
-
-#if 0
-BYTE read_byte() {
-  BYTE r;
-  r = read_nybble() << 4;
-  r |= read_nybble();
-  return r;
-}
-#endif
 
 static void write_byte(BYTE b) {
   _DX = LPTBASE;
@@ -464,9 +424,6 @@ static void write_byte(BYTE b) {
     TEST AL,0x80;
     JNZ loop2;
   }
-  
-//   write_nybble(b >> 4);
-//   write_nybble(b & 0xf);
 }
 
 PUBLIC int LPTRead (WORD unit, WORD lbn, BYTE far *buffer, WORD count)
