@@ -376,59 +376,62 @@ BYTE read_byte() {
   
   _DX = LPTBASE;
   
+  // nybble 1
   asm {
     INC DX;
   }
   loop1:
   asm {
-    IN AL,DX;
+    IN AL,DX; // wait for target to go high
     TEST AL,0x80;
     JZ loop1;
-    IN AL,DX;
+    IN AL,DX; // read in nybble
     SHL AL,1;
     AND AL,0xf0;
-    MOV AH,AL;
+    MOV AH,AL; // move to AH
     
-    DEC DX;
+    DEC DX; // signal high
     MOV AL,0x10;
     OUT DX,AL;
     INC DX;
   };
   loop2:
   asm {
-    IN AL,DX;
+    IN AL,DX; // wait for target to go low
     TEST AL,0x80;
     JNZ loop2;
     DEC DX;
-    MOV AL,0x00;
+    MOV AL,0x00; // signal low
     OUT DX,AL;
   }
+  
+  // now do nybble 2
   asm {
     INC DX;
   }
   loop3:
   asm {
-    IN AL,DX;
+    IN AL,DX; // wait for target to go high
     TEST AL,0x80;
     JZ loop3;
-    IN AL,DX;
-    SHR AL,1;
+    IN AL,DX; // read in nybble
+    SHR AL,1; // shift into position
     SHR AL,1;
     SHR AL,1;
     AND AL,0x0f;
-    OR AH,AL;
+    OR AH,AL; // or with AH for full byte
     
-    DEC DX;
+    DEC DX; // signal high
     MOV AL,0x10;
     OUT DX,AL;
     INC DX;
   };
   loop4:
   asm {
-    IN AL,DX;
-    TEST AL,0x80;
+    IN AL,DX; // wait for target to go low
+    TEST AL,0x80; 
     JNZ loop4;
-    DEC DX;
+    DEC DX; // signal low
     MOV AL,0x00;
     OUT DX,AL;
   }
@@ -458,22 +461,22 @@ static void write_byte(BYTE b) {
   _DX = LPTBASE;
   _AL = b;
   asm {
-    PUSH AX;
+    PUSH AX; // save AL
+    SHR AL,1; // AL >>= 4
     SHR AL,1;
     SHR AL,1;
     SHR AL,1;
-    SHR AL,1;
-    OR AL,0x10;
-    OUT DX, AL;
+    OR AL,0x10; // AL |= 0x10
+    OUT DX, AL; // output with bit 4 high
     INC DX;
   }
   loop1:
   asm {
-    IN AL,DX;
+    IN AL,DX; // wait for target to go high
     TEST AL,0x80;
     JZ loop1;
     
-    AND AL,0x0f;
+    AND AL,0x0f; // signal low
     DEC DX;
     OUT DX, AL;
 
@@ -481,25 +484,27 @@ static void write_byte(BYTE b) {
   }
   loop2:
   asm {
-    IN AL,DX;
+    IN AL,DX; // wait for target to go low
     TEST AL,0x80;
     JNZ loop2;
   }
+  
+  // nybble 2
   asm {
-    POP AX;
+    POP AX; // retrieve the byte for transmission
     AND AL,0x0f;
     OR AL,0x10;
     DEC DX;
-    OUT DX, AL;
+    OUT DX, AL; // output low nybble with bit 4 set high
     INC DX;
   }
   loop3:
   asm {
-    IN AL,DX;
+    IN AL,DX; // wait for target to go high
     TEST AL,0x80;
     JZ loop3;
     
-    AND AL,0x0f;
+    AND AL,0x0f; // signal low
     DEC DX;
     OUT DX, AL;
 
@@ -507,7 +512,7 @@ static void write_byte(BYTE b) {
   }
   loop4:
   asm {
-    IN AL,DX;
+    IN AL,DX; // wait for target to go low
     TEST AL,0x80;
     JNZ loop4;
   }
