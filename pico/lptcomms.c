@@ -57,50 +57,46 @@ static int waittimeout(int mask, int value) {
   return (c & mask) == value ? -1 : c;
 }
 
-int lptcomms_readnybble() {
+int lptcomms_readbyte() {
   int c,d;
   
   // wait for host to signal 1 nybble ready, acknowledge 1
-//   while (((c = readlpt()) & 0x10) == 0x00)
-//     tight_loop_contents();
   c = waittimeout(0x10, 0x00);
   if (c < 0) {
     gpio_put(19, 0);
     return -1;
   }
-  d = lptcomms_readlpt() & 0xf;
+  d = (lptcomms_readlpt() & 0xf) << 4;
   gpio_put(19, 1);
 
-//   while (((c = readlpt()) & 0x10) != 0x00)
-//     tight_loop_contents();
   c = waittimeout(0x10, 0x10);
   if (c < 0) {
     return -1;
   }
 
+  d |= (lptcomms_readlpt() & 0xf);
   gpio_put(19, 0);
-//   printf("[r:%x]", d);
   
   return d;
 }
 
-int lptcomms_readbyte() {
-  uint8_t b;
-  int i;
-  
-  i = lptcomms_readnybble();
-  if (i < 0) {
-    return -1;
-  }
-  b = i << 4;
-
-  i = lptcomms_readnybble();
-  if (i < 0) {
-    return -1;
-  }
-  b |= i;
-  return b;
-}
+// int lptcomms_readbyte() {
+//   uint8_t b;
+//   int i;
+//   
+//   i = lptcomms_readnybble();
+//   if (i < 0) {
+//     return -1;
+//   }
+//   b = i << 4;
+// 
+//   i = lptcomms_readnybble();
+//   if (i < 0) {
+//     return -1;
+//   }
+//   b |= i;
+//   return b;
+// }
 
 void lptcomms_writelpt(uint8_t b) {
   gpio_put(16, (b & 0x01) ? 0 : 1);
@@ -121,13 +117,13 @@ int lptcomms_readbytes(uint8_t *buff, int len) {
   return 0;
 }
 
-int lptcomms_writenybble(uint8_t b) {
+int lptcomms_writebyte(uint8_t b) {
   int c,d;
   
-  gpio_put(16, (b & 0x1) ? 0 : 1);
-  gpio_put(17, (b & 0x2) ? 0 : 1);
-  gpio_put(18, (b & 0x4) ? 0 : 1);
-  gpio_put(20, (b & 0x8) ? 0 : 1);
+  gpio_put(16, (b & 0x10) ? 0 : 1);
+  gpio_put(17, (b & 0x20) ? 0 : 1);
+  gpio_put(18, (b & 0x40) ? 0 : 1);
+  gpio_put(20, (b & 0x80) ? 0 : 1);
 
   gpio_put(19, 1); // write upper nybble then raise signal
   c = waittimeout(0x10, 0x00);
@@ -135,25 +131,19 @@ int lptcomms_writenybble(uint8_t b) {
     gpio_put(19, 0);
     return -1;
   }
-//   while ((readlpt() & 0x10) == 0x00) // wait for ack
-//     tight_loop_contents();
+
+  gpio_put(16, (b & 0x1) ? 0 : 1);
+  gpio_put(17, (b & 0x2) ? 0 : 1);
+  gpio_put(18, (b & 0x4) ? 0 : 1);
+  gpio_put(20, (b & 0x8) ? 0 : 1);
 
   gpio_put(19, 0); // write upper nybble then raise signal
-//   while ((readlpt() & 0x10) != 0x00) // wait for ack
-//     tight_loop_contents();
   c = waittimeout(0x10, 0x10);
   if (c < 0) {
     gpio_put(19, 0);
     return -1;
   }
 
-  return 0;
-}
-
-
-int lptcomms_writebyte(uint8_t b) {
-  if (lptcomms_writenybble(b >> 4) < 0) return -1;
-  if (lptcomms_writenybble(b & 0xf) < 0) return -1;
   return 0;
 }
 
