@@ -1,2 +1,2 @@
 #!/bin/bash
-docker build -t picobuild3 .
+docker build -t picobuild4 .
